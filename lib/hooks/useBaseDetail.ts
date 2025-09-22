@@ -238,18 +238,6 @@ export const useBaseDetail = (baseId: string | null) => {
     }
   }, []);
 
-  const updateField = useCallback(async (fieldId: string, updates: Partial<FieldRow>) => {
-    try {
-      setError(null);
-      await BaseDetailService.updateField(fieldId, updates);
-      setFields(prev => prev.map(f => f.id === fieldId ? { ...f, ...updates } : f));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update field';
-      setError(message);
-      throw err;
-    }
-  }, []);
-
   const deleteField = useCallback(async (fieldId: string) => {
     try {
       setError(null);
