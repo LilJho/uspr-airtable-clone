@@ -1,6 +1,7 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { Crown } from "lucide-react";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { RenameModal } from "@/components/ui/rename-modal";
 
@@ -17,9 +18,14 @@ import { GridView } from "@/components/base-detail/GridView";
 import { KanbanView } from "@/components/base-detail/KanbanView";
 import { AutomationsView } from "@/components/base-detail/AutomationsView";
 import { ImportCsvModal } from "@/components/base-detail/ImportCsvModal";
+import { CreateFieldModal } from "@/components/base-detail/CreateFieldModal";
+import { EditFieldModal } from "@/components/base-detail/EditFieldModal";
+import { CreateTableModal } from "@/components/base-detail/CreateTableModal";
+import { RenameTableModal } from "@/components/base-detail/RenameTableModal";
+import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
 
 // Types
-import type { BaseRow, FieldRow, RecordRow } from "@/lib/types/base-detail";
+import type { FieldRow, RecordRow, FieldType } from "@/lib/types/base-detail";
 
 // Services
 import { BaseDetailService } from "@/lib/services/base-detail-service";
@@ -29,7 +35,7 @@ export default function BaseDetailPage() {
   const baseId = useMemo(() => (Array.isArray(params?.id) ? params.id[0] : params?.id), [params]);
   
   // Custom hooks
-  const { user, loading: userLoading } = useAuth();
+  const { loading: userLoading } = useAuth();
   const {
     base,
     tables,
@@ -46,13 +52,19 @@ export default function BaseDetailPage() {
     deleteBase,
     createTable,
     updateTable,
+    deleteTable,
+    createField,
+    updateField,
+    deleteField,
     updateCell,
     deleteRecord,
     createRecord,
     createAutomation,
     updateAutomation,
     deleteAutomation,
-    toggleAutomation
+    toggleAutomation,
+    loadFields,
+    loadRecords
   } = useBaseDetail(baseId);
   
   const {
@@ -61,17 +73,35 @@ export default function BaseDetailPage() {
     sortFieldId,
     sortDirection,
     isRenameModalOpen,
+    isCreateFieldModalOpen,
+    isEditFieldModalOpen,
+    isCreateTableModalOpen,
+    isRenameTableModalOpen,
+    isDeleteTableModalOpen,
     isImportModalOpen,
     setViewMode,
     setTopTab,
     toggleSort,
     openRenameModal,
     closeRenameModal,
+    openCreateFieldModal,
+    closeCreateFieldModal,
+    openEditFieldModal,
+    closeEditFieldModal,
+    openCreateTableModal,
+    closeCreateTableModal,
+    openRenameTableModal,
+    closeRenameTableModal,
+    openDeleteTableModal,
+    closeDeleteTableModal,
     openImportModal,
     closeImportModal
   } = useBaseDetailState();
   
-  const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+  const { contextMenu, setContextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+
+  // State for editing field
+  const [editingField, setEditingField] = useState<FieldRow | null>(null);
 
   // Event handlers
   const handleRenameBase = async (newName: string) => {
@@ -97,7 +127,7 @@ export default function BaseDetailPage() {
   const handleFieldContextMenu = (e: React.MouseEvent, field: FieldRow) => {
     e.preventDefault();
     e.stopPropagation();
-    showContextMenu(e);
+    showContextMenu(e, 'field', field);
   };
 
   const handleRowContextMenu = (e: React.MouseEvent, record: RecordRow) => {
@@ -106,18 +136,30 @@ export default function BaseDetailPage() {
     showContextMenu(e);
   };
 
-  const handleCreateTable = async () => {
-    if (!base) return;
-    
-    const tableName = prompt("Enter table name:");
-    if (!tableName?.trim()) return;
+  const handleCreateTable = async (tableName: string) => {
+    if (!baseId) return;
     
     try {
-      await createTable({
-        name: tableName.trim(),
-        base_id: base.id,
-        order_index: tables.length
-      });
+      // Get the current table count from the database to avoid using the potentially corrupted tables array
+      let orderIndex = 0;
+      
+      try {
+        const existingTables = await BaseDetailService.getTables(baseId);
+        orderIndex = Array.isArray(existingTables) ? existingTables.length : 0;
+      } catch (fetchError) {
+        console.error('Error fetching tables for order index:', fetchError);
+        // Fallback to 0 if we can't fetch the count
+        orderIndex = 0;
+      }
+      
+      // Create completely clean data
+      const tableData = {
+        name: String(tableName),
+        base_id: String(baseId),
+        order_index: orderIndex
+      };
+      
+      await createTable(tableData);
     } catch (err) {
       console.error('Error creating table:', err);
     }
@@ -138,6 +180,48 @@ export default function BaseDetailPage() {
     }
   };
 
+  const handleRemoveMasterList = async (tableId: string) => {
+    try {
+      await updateTable(tableId, { is_master_list: false });
+    } catch (err) {
+      console.error('Error removing master list:', err);
+    }
+  };
+
+  const handleRenameTable = async (tableId: string) => {
+    // Store the tableId for the modal to use
+    setContextMenu(prev => ({ ...prev, tableId }));
+    openRenameTableModal();
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    // Store the tableId for the modal to use
+    setContextMenu(prev => ({ ...prev, tableId }));
+    openDeleteTableModal();
+  };
+
+  const handleRenameTableConfirm = async (newName: string) => {
+    if (!contextMenu?.tableId) return;
+    
+    try {
+      await updateTable(contextMenu.tableId, { name: newName });
+      closeRenameTableModal();
+    } catch (err) {
+      console.error('Error renaming table:', err);
+    }
+  };
+
+  const handleDeleteTableConfirm = async () => {
+    if (!contextMenu?.tableId) return;
+    
+    try {
+      await deleteTable(contextMenu.tableId);
+      closeDeleteTableModal();
+    } catch (err) {
+      console.error('Error deleting table:', err);
+    }
+  };
+
   const handleAddRow = async () => {
     try {
       await createRecord();
@@ -146,16 +230,77 @@ export default function BaseDetailPage() {
     }
   };
 
-  const handleImportCsv = async (data: { file: File; fieldMappings: Record<string, string> }) => {
+  const handleAddField = () => {
+    openCreateFieldModal();
+  };
+
+  const handleCreateField = async (fieldData: { name: string; type: FieldType; options?: Record<string, unknown> }) => {
+    if (!selectedTableId) return;
+    
+    try {
+      await createField({
+        name: fieldData.name,
+        type: fieldData.type,
+        table_id: selectedTableId,
+        order_index: fields.length,
+        options: fieldData.options
+      });
+    } catch (err) {
+      console.error('Error creating field:', err);
+    }
+  };
+
+  const handleEditField = async (fieldId: string, fieldData: { name: string; type: FieldType; options?: Record<string, unknown> }) => {
+    try {
+      await updateField(fieldId, {
+        name: fieldData.name,
+        type: fieldData.type,
+        options: fieldData.options || null
+      });
+      setEditingField(null);
+      closeEditFieldModal();
+    } catch (err) {
+      console.error('Error updating field:', err);
+    }
+  };
+
+  const handleDeleteField = async () => {
+    if (!contextMenu?.data?.id) return;
+    
+    const field = contextMenu.data;
+    if (!confirm(`Are you sure you want to delete the field "${field.name}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      await deleteField(field.id);
+      hideContextMenu();
+    } catch (err) {
+      console.error('Error deleting field:', err);
+    }
+  };
+
+  const handleImportCsv = async (data: { 
+    file: File; 
+    fieldMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }> 
+  }) => {
     if (!selectedTableId) {
       throw new Error('No table selected');
     }
 
+    console.log('Import CSV debug:', {
+      fieldMappings: data.fieldMappings,
+      selectedTableId
+    });
+
     const csvText = await data.file.text();
     const result = await BaseDetailService.importCsvData(selectedTableId, csvText, data.fieldMappings);
     
-    // Reload records to show the imported data
-    // The useBaseDetail hook should automatically refresh the records
+    // Reload fields and records to show the imported data and any new fields
+    if (selectedTableId) {
+      await loadFields(selectedTableId);
+      await loadRecords(selectedTableId);
+    }
     
     if (result.errors.length > 0) {
       console.warn('Import completed with errors:', result.errors);
@@ -165,29 +310,67 @@ export default function BaseDetailPage() {
   };
 
   // Context menu options
-  const contextMenuOptions = base ? [
-    {
-      id: "rename",
-      label: "Rename",
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-      ),
-      onClick: openRenameModal,
-    },
-    {
-      id: "delete",
-      label: "Delete",
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
-      ),
-      onClick: handleDeleteBase,
-      separator: true,
-    },
-  ] : [];
+  const getContextMenuOptions = () => {
+    if (!contextMenu.isVisible) return [];
+    
+    if (contextMenu.type === 'field') {
+      return [
+        {
+          id: "edit_field",
+          label: "Edit Field",
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          ),
+          onClick: () => {
+            if (contextMenu.data) {
+              setEditingField(contextMenu.data);
+              openEditFieldModal();
+              hideContextMenu();
+            }
+          },
+        },
+        {
+          id: "delete_field",
+          label: "Delete Field",
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          ),
+          onClick: handleDeleteField,
+        },
+      ];
+    }
+    
+    // Default base context menu options
+    return base ? [
+      {
+        id: "rename",
+        label: "Rename",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        ),
+        onClick: openRenameModal,
+      },
+      {
+        id: "delete",
+        label: "Delete",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        ),
+        onClick: handleDeleteBase,
+        separator: true,
+      },
+    ] : [];
+  };
+
+  const contextMenuOptions = getContextMenuOptions();
 
   // Loading state
   if (userLoading || loading) {
@@ -222,7 +405,7 @@ export default function BaseDetailPage() {
       <Sidebar
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        onCreateNew={handleCreateTable}
+        onCreateNew={openCreateTableModal}
       />
 
       {/* Main Content */}
@@ -236,8 +419,10 @@ export default function BaseDetailPage() {
           onTableSelect={setSelectedTableId}
           onTabChange={setTopTab}
           onBaseContextMenu={handleBaseContextMenu}
-          onCreateTable={handleCreateTable}
+          onCreateTable={openCreateTableModal}
           onToggleMasterList={handleToggleMasterList}
+          onRenameTable={handleRenameTable}
+          onDeleteTable={handleDeleteTable}
         />
 
         {/* Table Controls */}
@@ -248,8 +433,9 @@ export default function BaseDetailPage() {
             onTableSelect={setSelectedTableId}
             onAddRecord={handleAddRow}
             onImportCsv={openImportModal}
-            onCreateTable={handleCreateTable}
-            onToggleMasterList={handleToggleMasterList}
+            onCreateTable={openCreateTableModal}
+            onRenameTable={handleRenameTable}
+            onDeleteTable={handleDeleteTable}
             onHideFields={() => {}} // TODO: Implement
             onFilter={() => {}} // TODO: Implement
             onGroup={() => {}} // TODO: Implement
@@ -263,10 +449,56 @@ export default function BaseDetailPage() {
         <div className="flex-1 overflow-hidden">
           {topTab === 'data' && selectedTableId && (
             <>
+              {/* Master List Toggle Button */}
+              {(() => {
+                const selectedTable = tables.find(t => t.id === selectedTableId);
+                const hasMasterList = tables.some(t => t.is_master_list);
+                const isCurrentTableMaster = selectedTable?.is_master_list;
+                
+                // Only show the button if there's no master list in the base
+                if (!hasMasterList) {
+                  return (
+                    <div className="px-6 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMasterList(selectedTableId)}
+                        className="flex items-center gap-2 px-3 py-1 text-sm text-yellow-700 hover:bg-yellow-100 rounded-lg transition-colors"
+                        title="Make this table a master list"
+                      >
+                        <Crown size={14} />
+                        <span>Make Master List</span>
+                      </button>
+                    </div>
+                  );
+                }
+                
+                // If there is a master list, show the indicator for the current master list table
+                if (isCurrentTableMaster) {
+                  return (
+                    <div className="px-6 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMasterList(selectedTableId)}
+                        className="flex items-center gap-2 px-3 py-1 text-sm bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded-lg transition-colors"
+                        title="Remove master list status"
+                      >
+                        <Crown size={14} />
+                        <span>Master List</span>
+                      </button>
+                    </div>
+                  );
+                }
+                
+                // If there's a master list but this isn't the master list table, don't show anything
+                return null;
+              })()}
+              
               {viewMode === 'grid' ? (
                 <GridView
                   records={records}
                   fields={fields}
+                  tables={tables}
+                  selectedTableId={selectedTableId}
                   sortFieldId={sortFieldId}
                   sortDirection={sortDirection}
                   savingCell={savingCell}
@@ -274,7 +506,7 @@ export default function BaseDetailPage() {
                   onUpdateCell={updateCell}
                   onDeleteRow={deleteRecord}
                   onAddRow={handleAddRow}
-                  onAddField={() => {}} // TODO: Implement field creation
+                  onAddField={handleAddField}
                   onFieldContextMenu={handleFieldContextMenu}
                   onRowContextMenu={handleRowContextMenu}
                 />
@@ -324,7 +556,7 @@ export default function BaseDetailPage() {
       </div>
 
       {/* Context Menu */}
-      {base && (
+      {contextMenuOptions.length > 0 && (
         <ContextMenu
           options={contextMenuOptions}
           position={contextMenu.position}
@@ -340,6 +572,53 @@ export default function BaseDetailPage() {
         onClose={closeRenameModal}
         onRename={handleRenameBase}
         title="Rename Base"
+      />
+
+      {/* Create Field Modal */}
+      <CreateFieldModal
+        isOpen={isCreateFieldModalOpen}
+        onClose={closeCreateFieldModal}
+        onCreateField={handleCreateField}
+      />
+
+      {/* Edit Field Modal */}
+      <EditFieldModal
+        isOpen={isEditFieldModalOpen}
+        onClose={closeEditFieldModal}
+        onEditField={handleEditField}
+        field={editingField}
+      />
+
+      {/* Import CSV Modal */}
+      <ImportCsvModal
+        isOpen={isImportModalOpen}
+        onClose={closeImportModal}
+        fields={fields}
+        tableName={tables.find(t => t.id === selectedTableId)?.name || ""}
+        onImport={handleImportCsv}
+      />
+
+      {/* Create Table Modal */}
+      <CreateTableModal
+        isOpen={isCreateTableModalOpen}
+        onClose={closeCreateTableModal}
+        onCreateTable={handleCreateTable}
+      />
+
+      {/* Rename Table Modal */}
+      <RenameTableModal
+        isOpen={isRenameTableModalOpen}
+        onClose={closeRenameTableModal}
+        onRenameTable={handleRenameTableConfirm}
+        currentName={tables.find(t => t.id === contextMenu?.tableId)?.name || ""}
+      />
+
+      {/* Delete Table Modal */}
+      <DeleteTableModal
+        isOpen={isDeleteTableModalOpen}
+        onClose={closeDeleteTableModal}
+        onDeleteTable={handleDeleteTableConfirm}
+        tableName={tables.find(t => t.id === contextMenu?.tableId)?.name || ""}
       />
     </div>
   );

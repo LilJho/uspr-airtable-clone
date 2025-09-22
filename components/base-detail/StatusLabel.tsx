@@ -1,9 +1,10 @@
 interface StatusLabelProps {
   type: 'urgency' | 'lead_source' | 'status' | 'deal_type';
   value: string;
+  customColor?: string;
 }
 
-export const StatusLabel = ({ type, value }: StatusLabelProps) => {
+export const StatusLabel = ({ type, value, customColor }: StatusLabelProps) => {
   const getLabelStyles = (type: string, value: string) => {
     switch (type) {
       case 'urgency':
@@ -58,6 +59,18 @@ export const StatusLabel = ({ type, value }: StatusLabelProps) => {
         return 'bg-gray-500 text-white';
     }
   };
+
+  // If custom color is provided, use it instead of predefined styles
+  if (customColor) {
+    return (
+      <span 
+        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white"
+        style={{ backgroundColor: customColor }}
+      >
+        {value}
+      </span>
+    );
+  }
 
   return (
     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getLabelStyles(type, value)}`}>

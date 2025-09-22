@@ -15,7 +15,12 @@ export const useBaseDetailState = () => {
   // Modal states
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isFieldModalOpen, setIsFieldModalOpen] = useState(false);
+  const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
+  const [isEditFieldModalOpen, setIsEditFieldModalOpen] = useState(false);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [isCreateTableModalOpen, setIsCreateTableModalOpen] = useState(false);
+  const [isRenameTableModalOpen, setIsRenameTableModalOpen] = useState(false);
+  const [isDeleteTableModalOpen, setIsDeleteTableModalOpen] = useState(false);
   const [isAutomationModalOpen, setIsAutomationModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   
@@ -54,8 +59,8 @@ export const useBaseDetailState = () => {
     ],
   });
   const [isTriggerPanelOpen, setIsTriggerPanelOpen] = useState(false);
-  const [triggerFields, setTriggerFields] = useState<any[]>([]);
-  const [triggerTestResult, setTriggerTestResult] = useState<{ ok: boolean; record?: any | null }>({ ok: false });
+  const [triggerFields, setTriggerFields] = useState<unknown[]>([]);
+  const [triggerTestResult, setTriggerTestResult] = useState<{ ok: boolean; record?: unknown | null }>({ ok: false });
 
   // Modal helpers
   const openRenameModal = useCallback(() => {
@@ -75,6 +80,22 @@ export const useBaseDetailState = () => {
     setIsEditingFieldId(null);
     setFieldFormName("");
     setFieldFormType("text");
+  }, []);
+
+  const openCreateFieldModal = useCallback(() => {
+    setIsCreateFieldModalOpen(true);
+  }, []);
+
+  const closeCreateFieldModal = useCallback(() => {
+    setIsCreateFieldModalOpen(false);
+  }, []);
+
+  const openEditFieldModal = useCallback(() => {
+    setIsEditFieldModalOpen(true);
+  }, []);
+
+  const closeEditFieldModal = useCallback(() => {
+    setIsEditFieldModalOpen(false);
   }, []);
 
   const openTableModal = useCallback(() => {
@@ -101,6 +122,30 @@ export const useBaseDetailState = () => {
 
   const closeImportModal = useCallback(() => {
     setIsImportModalOpen(false);
+  }, []);
+
+  const openCreateTableModal = useCallback(() => {
+    setIsCreateTableModalOpen(true);
+  }, []);
+
+  const closeCreateTableModal = useCallback(() => {
+    setIsCreateTableModalOpen(false);
+  }, []);
+
+  const openRenameTableModal = useCallback(() => {
+    setIsRenameTableModalOpen(true);
+  }, []);
+
+  const closeRenameTableModal = useCallback(() => {
+    setIsRenameTableModalOpen(false);
+  }, []);
+
+  const openDeleteTableModal = useCallback(() => {
+    setIsDeleteTableModalOpen(true);
+  }, []);
+
+  const closeDeleteTableModal = useCallback(() => {
+    setIsDeleteTableModalOpen(false);
   }, []);
 
   // Sort helpers
@@ -143,7 +188,12 @@ export const useBaseDetailState = () => {
     // Modal states
     isRenameModalOpen,
     isFieldModalOpen,
+    isCreateFieldModalOpen,
+    isEditFieldModalOpen,
     isTableModalOpen,
+    isCreateTableModalOpen,
+    isRenameTableModalOpen,
+    isDeleteTableModalOpen,
     isAutomationModalOpen,
     isImportModalOpen,
     
@@ -190,8 +240,18 @@ export const useBaseDetailState = () => {
     closeRenameModal,
     openFieldModal,
     closeFieldModal,
+    openCreateFieldModal,
+    closeCreateFieldModal,
+    openEditFieldModal,
+    closeEditFieldModal,
     openTableModal,
     closeTableModal,
+    openCreateTableModal,
+    closeCreateTableModal,
+    openRenameTableModal,
+    closeRenameTableModal,
+    openDeleteTableModal,
+    closeDeleteTableModal,
     openAutomationModal,
     closeAutomationModal,
     openImportModal,

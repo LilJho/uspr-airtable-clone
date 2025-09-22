@@ -66,22 +66,42 @@ export const useBaseDetail = (baseId: string | null) => {
   const loadFields = useCallback(async (tableId: string) => {
     try {
       setError(null);
-      const fieldsData = await BaseDetailService.getFields(tableId);
-      setFields(fieldsData);
+      
+      // Check if the selected table is a master list
+      const selectedTable = tables.find(t => t.id === tableId);
+      if (selectedTable?.is_master_list && baseId) {
+        // If it's a master list, load all fields from all tables in the base
+        const fieldsData = await BaseDetailService.getAllFields(baseId);
+        setFields(fieldsData);
+      } else {
+        // Otherwise, load fields only from the selected table
+        const fieldsData = await BaseDetailService.getFields(tableId);
+        setFields(fieldsData);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load fields';
       setError(message);
       console.error('Error loading fields:', err);
     }
-  }, []);
+  }, [tables, baseId]);
 
   // Load records for selected table
   const loadRecords = useCallback(async (tableId: string) => {
     try {
       setLoadingRecords(true);
       setError(null);
-      const recordsData = await BaseDetailService.getRecords(tableId);
-      setRecords(recordsData);
+      
+      // Check if the selected table is a master list
+      const selectedTable = tables.find(t => t.id === tableId);
+      if (selectedTable?.is_master_list && baseId) {
+        // If it's a master list, load all records from all tables in the base
+        const recordsData = await BaseDetailService.getAllRecordsFromBase(baseId);
+        setRecords(recordsData);
+      } else {
+        // Otherwise, load records only from the selected table
+        const recordsData = await BaseDetailService.getRecords(tableId);
+        setRecords(recordsData);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load records';
       setError(message);
@@ -89,7 +109,7 @@ export const useBaseDetail = (baseId: string | null) => {
     } finally {
       setLoadingRecords(false);
     }
-  }, []);
+  }, [tables, baseId]);
 
   // Load all fields for base (for automations)
   const loadAllFields = useCallback(async () => {
@@ -218,6 +238,18 @@ export const useBaseDetail = (baseId: string | null) => {
     }
   }, []);
 
+  const updateField = useCallback(async (fieldId: string, updates: Partial<FieldRow>) => {
+    try {
+      setError(null);
+      await BaseDetailService.updateField(fieldId, updates);
+      setFields(prev => prev.map(f => f.id === fieldId ? { ...f, ...updates } : f));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update field';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
   const deleteField = useCallback(async (fieldId: string) => {
     try {
       setError(null);
@@ -237,7 +269,7 @@ export const useBaseDetail = (baseId: string | null) => {
     try {
       setError(null);
       const newRecord = await BaseDetailService.createRecord(selectedTableId, values);
-      setRecords(prev => [newRecord, ...prev]);
+      setRecords(prev => [...prev, newRecord]);
       return newRecord;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create record';

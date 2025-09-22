@@ -1,11 +1,13 @@
 import { Plus } from "lucide-react";
 import { TableHeader } from "./TableHeader";
 import { TableRow } from "./TableRow";
-import type { RecordRow, FieldRow, SavingCell } from "@/lib/types/base-detail";
+import type { RecordRow, FieldRow, SavingCell, TableRow as TableRowType } from "@/lib/types/base-detail";
 
 interface GridViewProps {
   records: RecordRow[];
   fields: FieldRow[];
+  tables: TableRowType[];
+  selectedTableId: string | null;
   sortFieldId: string | null;
   sortDirection: 'asc' | 'desc';
   savingCell: SavingCell;
@@ -21,6 +23,8 @@ interface GridViewProps {
 export const GridView = ({
   records,
   fields,
+  tables,
+  selectedTableId,
   sortFieldId,
   sortDirection,
   savingCell,
@@ -61,7 +65,7 @@ export const GridView = ({
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <Plus size={16} />
-                Add record
+                Add Row
               </button>
             </div>
           </div>
@@ -72,6 +76,8 @@ export const GridView = ({
                 key={record.id}
                 record={record}
                 fields={fields}
+                tables={tables}
+                selectedTableId={selectedTableId}
                 rowIndex={index}
                 savingCell={savingCell}
                 onUpdateCell={onUpdateCell}
@@ -80,34 +86,26 @@ export const GridView = ({
               />
             ))}
             
-            {/* Add row button */}
+            {/* Add Row button spanning entire row */}
             <div className="flex border-b border-gray-200 hover:bg-gray-50">
               <div className="w-12 flex-shrink-0 border-r border-gray-200 bg-gray-100 flex items-center justify-center">
                 <span className="text-xs text-gray-500">+</span>
               </div>
-              {fields.map((field) => (
-                <div key={field.id} className="flex-1 min-w-[150px] border-r border-gray-200">
-                  <button
-                    onClick={onAddRow}
-                    className="w-full h-12 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
-              ))}
+              <div className="flex-1 min-w-0">
+                <button
+                  onClick={onAddRow}
+                  className="w-full h-12 flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+                >
+                  <Plus size={16} />
+                  <span>Add Row</span>
+                </button>
+              </div>
               <div className="w-32 flex-shrink-0"></div>
             </div>
             
             {/* Footer with record count */}
-            <div className="flex items-center justify-between px-6 py-3 bg-gray-50 border-t border-gray-200">
-              <button
-                onClick={onAddRow}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <Plus size={16} />
-                <span>Add...</span>
-              </button>
-              <span className="text-sm text-gray-500">{records.length} deals</span>
+            <div className="flex items-center justify-end px-6 py-3 bg-gray-50 border-t border-gray-200">
+              <span className="text-sm text-gray-500">{records.length} {records.length === 1 ? 'record' : 'records'}</span>
             </div>
           </div>
         )}

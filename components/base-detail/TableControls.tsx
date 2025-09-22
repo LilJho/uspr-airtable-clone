@@ -12,7 +12,9 @@ import {
   Share2, 
   Search,
   Upload,
-  Crown
+  MoreVertical,
+  Edit,
+  Trash2
 } from "lucide-react";
 import type { TableRow } from "@/lib/types/base-detail";
 
@@ -23,7 +25,8 @@ interface TableControlsProps {
   onAddRecord: () => void;
   onImportCsv: () => void;
   onCreateTable: () => void;
-  onToggleMasterList: (tableId: string) => void;
+  onRenameTable: (tableId: string) => void;
+  onDeleteTable: (tableId: string) => void;
   onHideFields: () => void;
   onFilter: () => void;
   onGroup: () => void;
@@ -39,7 +42,8 @@ export const TableControls = ({
   onAddRecord,
   onImportCsv,
   onCreateTable,
-  onToggleMasterList,
+  onRenameTable,
+  onDeleteTable,
   onHideFields,
   onFilter,
   onGroup,
@@ -47,6 +51,25 @@ export const TableControls = ({
   onColor,
   onShare
 }: TableControlsProps) => {
+  const [contextMenu, setContextMenu] = useState<{
+    tableId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleTableContextMenu = (e: React.MouseEvent, tableId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      tableId,
+      x: e.clientX,
+      y: e.clientY
+    });
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
 
   return (
     <div className="bg-white border-b border-gray-200">
@@ -54,10 +77,11 @@ export const TableControls = ({
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200">
         <div className="flex items-center gap-2 overflow-x-auto">
           {tables.map((table) => (
-            <div key={table.id} className="flex items-center gap-1 group">
+            <div key={table.id} className="flex items-center gap-1 group relative">
               <button
                 type="button"
                 onClick={() => onTableSelect(table.id)}
+                onContextMenu={(e) => handleTableContextMenu(e, table.id)}
                 className={`flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   selectedTableId === table.id
                     ? 'bg-blue-100 text-blue-700'
@@ -69,24 +93,17 @@ export const TableControls = ({
                   <ChevronRight size={14} className="text-blue-700" />
                 )}
               </button>
-              {!table.is_master_list && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleMasterList(table.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-yellow-100 rounded transition-all"
-                  title="Make master list"
-                >
-                  <Crown size={12} className="text-yellow-600" />
-                </button>
-              )}
-              {table.is_master_list && (
-                <div className="p-1" title="Master list">
-                  <Crown size={12} className="text-yellow-600" />
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleTableContextMenu(e, table.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all"
+                title="Table options"
+              >
+                <MoreVertical size={12} />
+              </button>
             </div>
           ))}
           <button
@@ -192,6 +209,49 @@ export const TableControls = ({
           />
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-10" 
+            onClick={closeContextMenu}
+          />
+          
+          {/* Context Menu */}
+          <div
+            className="fixed z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onRenameTable(contextMenu.tableId);
+                closeContextMenu();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <Edit size={14} />
+              <span>Rename table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteTable(contextMenu.tableId);
+                closeContextMenu();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 size={14} />
+              <span>Delete table</span>
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 };

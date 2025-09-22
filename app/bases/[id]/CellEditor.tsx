@@ -18,22 +18,47 @@ export default function CellEditor({
   const [local, setLocal] = useState<string>(() => (value == null ? "" : String(value)));
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  type SelectOptions = { choices?: string[] };
+  type SelectOptions = { choices?: string[] } | Record<string, { label: string; color: string }>;
+  
+  const defaultChoiceColors = ['#3b82f6', '#eab308', '#ef4444']; // blue, yellow, red
+  
   const selectChoices = useMemo(() => {
     if (field.type === 'single_select' || field.type === 'multi_select') {
-      const choices = (field.options as SelectOptions | null | undefined)?.choices;
-      return Array.isArray(choices) ? choices : [];
+      const options = field.options as SelectOptions | null | undefined;
+      
+      // Handle new format: { optionId: { label: string, color: string } }
+      if (options && typeof options === 'object' && !Array.isArray(options)) {
+        const hasNewFormat = Object.values(options).some(val => 
+          typeof val === 'object' && val !== null && 'label' in val
+        );
+        
+        if (hasNewFormat) {
+          return Object.entries(options).map(([key, option]) => ({
+            key,
+            label: (option as { label: string; color: string }).label,
+            color: (option as { label: string; color: string }).color
+          }));
+        }
+      }
+      
+      // Handle old format: { choices: string[] }
+      const choices = (options as { choices?: string[] })?.choices;
+      if (Array.isArray(choices)) {
+        return choices.map((choice, idx) => ({
+          key: choice,
+          label: choice,
+          color: defaultChoiceColors[idx % defaultChoiceColors.length]
+        }));
+      }
     }
     return [];
   }, [field]);
-
-  const defaultChoiceColors = ['#3b82f6', '#eab308', '#ef4444']; // blue, yellow, red
   const choiceColors = useMemo(() => {
     if (field.type !== 'single_select' && field.type !== 'multi_select') return {} as Record<string, string>;
-    const saved = ((field.options as any)?.choiceColors || {}) as Record<string, string>;
+    
     const map: Record<string, string> = {};
-    selectChoices.forEach((label, idx) => {
-      map[label] = saved[label] || defaultChoiceColors[idx % defaultChoiceColors.length];
+    selectChoices.forEach((choice) => {
+      map[choice.key] = choice.color;
     });
     return map;
   }, [field, selectChoices]);
@@ -93,8 +118,14 @@ export default function CellEditor({
         style={selectedColor ? { backgroundColor: hexToRgba(selectedColor, 0.18) } : undefined}
       >
         <option value="">Select...</option>
-        {selectChoices.map((c) => (
-          <option key={c} value={c} style={{ backgroundColor: hexToRgba(choiceColors[c], 0.18) }}>{c}</option>
+        {selectChoices.map((choice) => (
+          <option 
+            key={choice.key} 
+            value={choice.key} 
+            style={{ backgroundColor: hexToRgba(choice.color, 0.18) }}
+          >
+            {choice.label}
+          </option>
         ))}
       </select>
     );

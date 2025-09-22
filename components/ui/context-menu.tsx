@@ -92,18 +92,23 @@ export function useContextMenu() {
   const [contextMenu, setContextMenu] = useState<{
     isVisible: boolean;
     position: { x: number; y: number };
+    type?: 'base' | 'field' | 'table' | 'record';
+    data?: any;
+    tableId?: string;
   }>({
     isVisible: false,
     position: { x: 0, y: 0 },
   });
 
-  const showContextMenu = (event: React.MouseEvent) => {
+  const showContextMenu = (event: React.MouseEvent, type?: 'base' | 'field' | 'table' | 'record', data?: any) => {
     event.preventDefault();
     event.stopPropagation();
     
     setContextMenu({
       isVisible: true,
       position: { x: event.clientX, y: event.clientY },
+      type,
+      data,
     });
   };
 
@@ -113,6 +118,7 @@ export function useContextMenu() {
 
   return {
     contextMenu,
+    setContextMenu,
     showContextMenu,
     hideContextMenu,
   };

@@ -6,7 +6,10 @@ import type { FieldRow } from "@/lib/types/base-detail";
 interface ImportCsvModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (data: { file: File; fieldMappings: Record<string, string> }) => Promise<{ imported: number; errors: string[] }>;
+  onImport: (data: { 
+    file: File; 
+    fieldMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }> 
+  }) => Promise<{ imported: number; errors: string[] }>;
   fields: FieldRow[];
   tableName: string;
 }
@@ -26,7 +29,7 @@ export const ImportCsvModal = ({
 }: ImportCsvModalProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [csvColumns, setCsvColumns] = useState<CsvColumn[]>([]);
-  const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({});
+  const [fieldMappings, setFieldMappings] = useState<Record<string, string | { type: 'create', fieldType: string, fieldName: string }>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'upload' | 'mapping' | 'importing' | 'success'>('upload');
@@ -81,11 +84,45 @@ export const ImportCsvModal = ({
     e.preventDefault();
   }, []);
 
-  const handleMappingChange = useCallback((csvColumn: string, fieldId: string) => {
-    setFieldMappings(prev => ({
-      ...prev,
-      [csvColumn]: fieldId
-    }));
+  const handleMappingChange = useCallback((csvColumn: string, fieldId: string | 'create') => {
+    if (fieldId === 'create') {
+      // Initialize with default values for creating a new field
+      setFieldMappings(prev => ({
+        ...prev,
+        [csvColumn]: { type: 'create', fieldType: 'text', fieldName: csvColumn }
+      }));
+    } else {
+      setFieldMappings(prev => ({
+        ...prev,
+        [csvColumn]: fieldId
+      }));
+    }
+  }, []);
+
+  const handleCreateFieldTypeChange = useCallback((csvColumn: string, fieldType: string) => {
+    setFieldMappings(prev => {
+      const current = prev[csvColumn];
+      if (typeof current === 'object' && current.type === 'create') {
+        return {
+          ...prev,
+          [csvColumn]: { ...current, fieldType }
+        };
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleCreateFieldNameChange = useCallback((csvColumn: string, fieldName: string) => {
+    setFieldMappings(prev => {
+      const current = prev[csvColumn];
+      if (typeof current === 'object' && current.type === 'create') {
+        return {
+          ...prev,
+          [csvColumn]: { ...current, fieldName }
+        };
+      }
+      return prev;
+    });
   }, []);
 
   const handleImport = useCallback(async () => {
@@ -196,29 +233,75 @@ export const ImportCsvModal = ({
               </div>
 
               <div className="space-y-4">
-                {csvColumns.map((column) => (
-                  <div key={column.index} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">{column.header}</div>
-                      <div className="text-sm text-gray-500">Sample: {column.sampleValue}</div>
+                {csvColumns.map((column) => {
+                  const mapping = fieldMappings[column.header];
+                  const isCreateNew = typeof mapping === 'object' && mapping.type === 'create';
+                  const existingFieldId = typeof mapping === 'string' ? mapping : '';
+                  
+                  return (
+                    <div key={column.index} className="p-4 bg-gray-50 rounded-lg space-y-3">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{column.header}</div>
+                          <div className="text-sm text-gray-500">Sample: {column.sampleValue}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500">→</span>
+                          <select
+                            value={isCreateNew ? 'create' : existingFieldId}
+                            onChange={(e) => handleMappingChange(column.header, e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Skip this column</option>
+                            <option value="create">Create new field</option>
+                            {fields.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.name} ({field.type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      
+                      {/* Show field creation options when "Create new field" is selected */}
+                      {isCreateNew && (
+                        <div className="flex items-center gap-4 pl-4 border-l-2 border-blue-200">
+                          <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Field Name
+                            </label>
+                            <input
+                              type="text"
+                              value={mapping.fieldName}
+                              onChange={(e) => handleCreateFieldNameChange(column.header, e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Enter field name"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Field Type
+                            </label>
+                            <select
+                              value={mapping.fieldType}
+                              onChange={(e) => handleCreateFieldTypeChange(column.header, e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="text">Text</option>
+                              <option value="number">Number</option>
+                              <option value="date">Date</option>
+                              <option value="email">Email</option>
+                              <option value="checkbox">Checkbox</option>
+                              <option value="single_select">Single Select</option>
+                              <option value="multi_select">Multi Select</option>
+                              <option value="link">Link</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">→</span>
-                      <select
-                        value={fieldMappings[column.header] || ''}
-                        onChange={(e) => handleMappingChange(column.header, e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Skip this column</option>
-                        {fields.map((field) => (
-                          <option key={field.id} value={field.id}>
-                            {field.name} ({field.type})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {error && (
