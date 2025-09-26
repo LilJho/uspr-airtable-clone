@@ -6,6 +6,10 @@ import { toast } from "sonner";
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -18,7 +22,23 @@ export default function SignupPage() {
     setError(null);
     setSuccess(false);
     setEmailAlreadyExists(false);
-    const { error } = await supabase.auth.signUp({ email, password });
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      setLoading(false);
+      return;
+    }
+    const { error } = await supabase.auth.signUp({ 
+      email, 
+      password,
+      options: {
+        data: {
+          first_name: firstName || null,
+          middle_name: middleName || null,
+          last_name: lastName || null,
+          full_name: [firstName, middleName?.trim() ? middleName : null, lastName].filter(Boolean).join(' ') || null,
+        }
+      }
+    });
     if (error) {
       const message = error.message ?? "Signup failed";
       const alreadyExists = /already\s*registered|already\s*exists/i.test(message);
@@ -55,6 +75,31 @@ export default function SignupPage() {
     <div className="flex flex-col items-center justify-center min-h-screen px-8">
       <form onSubmit={handleSignup} className="bg-white p-8 rounded shadow-md w-full max-w-100 md:w-100">
         <h1 className="text-2xl font-bold mb-6">Sign Up</h1>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <input
+            type="text"
+            placeholder="First name"
+            value={firstName}
+            onChange={e => setFirstName(e.target.value)}
+            className="w-full p-2 border rounded"
+            required
+          />
+          <input
+            type="text"
+            placeholder="Middle name (optional)"
+            value={middleName}
+            onChange={e => setMiddleName(e.target.value)}
+            className="w-full p-2 border rounded"
+          />
+          <input
+            type="text"
+            placeholder="Last name"
+            value={lastName}
+            onChange={e => setLastName(e.target.value)}
+            className="w-full p-2 border rounded"
+            required
+          />
+        </div>
         <input
           type="email"
           placeholder="Email"
@@ -68,6 +113,14 @@ export default function SignupPage() {
           placeholder="Password"
           value={password}
           onChange={e => setPassword(e.target.value)}
+          className="w-full p-2 mb-4 border rounded"
+          required
+        />
+        <input
+          type="password"
+          placeholder="Confirm Password"
+          value={confirmPassword}
+          onChange={e => setConfirmPassword(e.target.value)}
           className="w-full p-2 mb-4 border rounded"
           required
         />

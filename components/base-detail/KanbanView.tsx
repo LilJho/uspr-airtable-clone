@@ -8,6 +8,7 @@ interface KanbanViewProps {
   onDeleteRow: (recordId: string) => void;
   onAddRow: () => void;
   savingCell: {recordId: string; fieldId: string} | null;
+  canDeleteRow?: boolean;
 }
 
 export const KanbanView = ({ 
@@ -16,7 +17,8 @@ export const KanbanView = ({
   onUpdateCell, 
   onDeleteRow, 
   onAddRow, 
-  savingCell 
+  savingCell,
+  canDeleteRow = true 
 }: KanbanViewProps) => {
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -169,12 +171,14 @@ export const KanbanView = ({
                     
                     {/* Actions */}
                     <div className="flex justify-end gap-2 mt-3 pt-2 border-t border-gray-100">
-                      <button
-                        onClick={() => onDeleteRow(record.id)}
-                        className="text-xs text-red-600 hover:text-red-800"
-                      >
-                        Delete
-                      </button>
+                      {canDeleteRow && (
+                        <button
+                          onClick={() => onDeleteRow(record.id)}
+                          className="text-xs text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

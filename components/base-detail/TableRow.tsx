@@ -13,6 +13,7 @@ interface TableRowProps {
   onUpdateCell: (recordId: string, fieldId: string, value: unknown) => void;
   onDeleteRow: (recordId: string) => void;
   onRowContextMenu: (e: React.MouseEvent, record: RecordRow) => void;
+  canDeleteRow?: boolean;
 }
 
 export const TableRow = ({
@@ -24,7 +25,8 @@ export const TableRow = ({
   savingCell,
   onUpdateCell,
   onDeleteRow,
-  onRowContextMenu
+  onRowContextMenu,
+  canDeleteRow = true
 }: TableRowProps) => {
   const isSaving = savingCell?.recordId === record.id;
   
@@ -127,14 +129,16 @@ export const TableRow = ({
           >
             <MoreVertical size={14} />
           </button>
-          <button
-            onClick={() => onDeleteRow(record.id)}
-            className="p-1 hover:bg-red-100 text-red-600 hover:text-red-800 rounded"
-            title="Delete row"
-            disabled={isSaving}
-          >
-            <Trash2 size={14} />
-          </button>
+          {canDeleteRow && (
+            <button
+              onClick={() => onDeleteRow(record.id)}
+              className="p-1 hover:bg-red-100 text-red-600 hover:text-red-800 rounded"
+              title="Delete row"
+              disabled={isSaving}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
       </div>
     </div>

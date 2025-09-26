@@ -33,6 +33,7 @@ interface TableControlsProps {
   onSort: () => void;
   onColor: () => void;
   onShare: () => void;
+  canDeleteTable?: boolean;
 }
 
 export const TableControls = ({
@@ -49,7 +50,8 @@ export const TableControls = ({
   onGroup,
   onSort,
   onColor,
-  onShare
+  onShare,
+  canDeleteTable = true
 }: TableControlsProps) => {
   const [contextMenu, setContextMenu] = useState<{
     tableId: string;
@@ -238,17 +240,19 @@ export const TableControls = ({
               <Edit size={14} />
               <span>Rename table</span>
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                onDeleteTable(contextMenu.tableId);
-                closeContextMenu();
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 size={14} />
-              <span>Delete table</span>
-            </button>
+            {canDeleteTable && (
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteTable(contextMenu.tableId);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={14} />
+                <span>Delete table</span>
+              </button>
+            )}
           </div>
         </>
       )}

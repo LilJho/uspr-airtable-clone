@@ -15,6 +15,8 @@ interface WorkspaceViewProps {
   onCollectionViewChange: (view: CollectionView) => void;
   onCreateBase: () => void;
   onBaseContextMenu: (e: React.MouseEvent, base: BaseRecord) => void;
+  onManageMembers?: () => void;
+  canManageMembers?: boolean;
 }
 
 export const WorkspaceView = ({
@@ -25,7 +27,9 @@ export const WorkspaceView = ({
   sortOption,
   onCollectionViewChange,
   onCreateBase,
-  onBaseContextMenu
+  onBaseContextMenu,
+  onManageMembers,
+  canManageMembers = false
 }: WorkspaceViewProps) => {
   const currentWorkspace = workspaces.find(w => w.id === selectedWorkspaceId);
 
@@ -34,6 +38,14 @@ export const WorkspaceView = ({
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">{currentWorkspace?.name || 'Workspace'}</h1>
         <div className="flex items-center gap-3">
+          {canManageMembers && onManageMembers && (
+            <button
+              onClick={onManageMembers}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Manage members
+            </button>
+          )}
           <button 
             onClick={onCreateBase}
             className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"

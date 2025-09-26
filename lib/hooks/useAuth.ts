@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthService } from '../services/auth-service';
 import type { SupabaseUser } from '../types/dashboard';
+import { supabase } from '../supabaseClient';
 
 export const useAuth = () => {
   const [user, setUser] = useState<SupabaseUser | null>(null);
@@ -35,6 +36,13 @@ export const useAuth = () => {
 
   useEffect(() => {
     checkUser();
+    // Keep session in sync with auth changes
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event) => {
+      void checkUser();
+    });
+    return () => {
+      subscription.subscription?.unsubscribe();
+    };
   }, [checkUser]);
 
   return {

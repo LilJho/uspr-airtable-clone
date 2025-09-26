@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { RenameModal } from "@/components/ui/rename-modal";
@@ -20,9 +20,11 @@ import { StarredView } from "@/components/dashboard/views/StarredView";
 import { CreateBaseModal } from "@/components/dashboard/modals/CreateBaseModal";
 import { CreateWorkspaceModal } from "@/components/dashboard/modals/CreateWorkspaceModal";
 import { DeleteWorkspaceModal } from "@/components/dashboard/modals/DeleteWorkspaceModal";
+import { ManageWorkspaceMembersModal } from "@/components/dashboard/modals/ManageWorkspaceMembersModal";
 
 // Utils
 import { getBaseContextMenuOptions } from "@/lib/utils/context-menu-helpers";
+import { useRole } from "@/lib/hooks/useRole";
 
 // Types
 import type { BaseRecord } from "@/lib/types/dashboard";
@@ -50,6 +52,7 @@ export default function Dashboard() {
   
   const {
     workspaces,
+    sharedWorkspaces,
     error: workspacesError,
     loadWorkspaces,
     createWorkspace,
@@ -96,14 +99,20 @@ export default function Dashboard() {
     setEditingWorkspaceName
   } = useDashboardState();
 
+  // Resolve delete permission for selected workspace/base context
+  const { role, can } = useRole({ workspaceId: selectedWorkspaceId ?? undefined });
+  const [isManageWorkspaceMembersOpen, setIsManageWorkspaceMembersOpen] = useState(false);
+
   // Initialize data on component mount
   const initializeDashboard = useCallback(async () => {
+    // Ensure user is present before loading data
+    if (!user) return;
     const defaultWorkspaceId = await loadWorkspaces();
     if (defaultWorkspaceId) {
       setSelectedWorkspaceId(defaultWorkspaceId);
     }
     await loadRecentBases();
-  }, [loadWorkspaces, loadRecentBases, setSelectedWorkspaceId]);
+  }, [user, loadWorkspaces, loadRecentBases, setSelectedWorkspaceId]);
 
   // Event handlers
   const handleBaseContextMenu = useCallback((e: React.MouseEvent, base: BaseRecord) => {
@@ -130,9 +139,18 @@ export default function Dashboard() {
   }, [createBase]);
 
   const handleCreateWorkspace = useCallback(async (formData: { name: string }) => {
-    const newWorkspace = await createWorkspace(formData);
-    setSelectedWorkspaceId(newWorkspace.id);
-  }, [createWorkspace, setSelectedWorkspaceId]);
+    try {
+      const newWorkspace = await createWorkspace(formData);
+      setSelectedWorkspaceId(newWorkspace.id);
+      switchToWorkspaceView(newWorkspace.id);
+    } catch (err: any) {
+      // Error is already handled in createWorkspace, but we can add UI feedback here
+      const message = err instanceof Error ? err.message : 'Failed to create workspace';
+      if (typeof window !== 'undefined') {
+        alert(message);
+      }
+    }
+  }, [createWorkspace, setSelectedWorkspaceId, switchToWorkspaceView]);
 
   const handleEditWorkspace = useCallback(async (id: string, name: string) => {
     await updateWorkspace(id, name);
@@ -141,16 +159,23 @@ export default function Dashboard() {
 
   const handleDeleteWorkspace = useCallback(async () => {
     if (!workspaceToDelete) return;
-    
-    await deleteWorkspace(workspaceToDelete.id);
-        
-        // If we're deleting the currently selected workspace, switch to home
-        if (selectedWorkspaceId === workspaceToDelete.id) {
-      switchToHomeView();
-          setSelectedWorkspaceId(null);
-        }
-        
-    closeDeleteWorkspaceModal();
+    try {
+      await deleteWorkspace(workspaceToDelete.id);
+      // If we're deleting the currently selected workspace, switch to home
+      if (selectedWorkspaceId === workspaceToDelete.id) {
+        switchToHomeView();
+        setSelectedWorkspaceId(null);
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Failed to delete workspace';
+      // Avoid throwing raw objects to the runtime – surface to the user and log for devs
+      console.error('Delete workspace error:', err);
+      if (typeof window !== 'undefined') {
+        alert(message);
+      }
+    } finally {
+      closeDeleteWorkspaceModal();
+    }
   }, [workspaceToDelete, deleteWorkspace, selectedWorkspaceId, switchToHomeView, setSelectedWorkspaceId, closeDeleteWorkspaceModal]);
 
   const handleWorkspaceSelect = useCallback((workspaceId: string) => {
@@ -170,7 +195,7 @@ export default function Dashboard() {
     onToggleStar: toggleStar,
     onDuplicate: () => alert("Duplicate functionality would be implemented here"),
     onDelete: handleDeleteBase
-  }) : [];
+  }, { canDelete: can.delete }) : [];
 
   // Initialize dashboard on mount
   useEffect(() => {
@@ -193,6 +218,7 @@ export default function Dashboard() {
           activeView={activeView}
           selectedWorkspaceId={selectedWorkspaceId}
           workspaces={workspaces}
+          sharedWorkspaces={sharedWorkspaces}
           workspacesCollapsed={workspacesCollapsed}
           editingWorkspaceId={editingWorkspaceId}
           editingWorkspaceName={editingWorkspaceName}
@@ -244,6 +270,8 @@ export default function Dashboard() {
                 onCollectionViewChange={setCollectionView}
                 onCreateBase={openCreateModal}
                 onBaseContextMenu={handleBaseContextMenu}
+                onManageMembers={() => setIsManageWorkspaceMembersOpen(true)}
+                canManageMembers={role === 'owner' || role === 'admin'}
               />
             )}
             
@@ -280,6 +308,15 @@ export default function Dashboard() {
             onDelete={handleDeleteWorkspace}
             deleting={false}
           />
+
+          {/* Manage Workspace Members */}
+          {selectedWorkspaceId && (
+            <ManageWorkspaceMembersModal
+              isOpen={isManageWorkspaceMembersOpen}
+              onClose={() => setIsManageWorkspaceMembersOpen(false)}
+              workspaceId={selectedWorkspaceId}
+            />
+          )}
 
           {/* Context Menu */}
           {selectedBase && (

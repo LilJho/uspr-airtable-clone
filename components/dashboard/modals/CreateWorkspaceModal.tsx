@@ -22,6 +22,8 @@ export const CreateWorkspaceModal = ({ isOpen, onClose, onCreate }: CreateWorksp
       onClose();
     } catch (err) {
       console.error('Error creating workspace:', err);
+      // Error is already handled by the parent component
+      // We just need to ensure the modal stays open
     } finally {
       setCreating(false);
     }
