@@ -75,31 +75,30 @@ export default function SignupPage() {
     <div className="flex flex-col items-center justify-center min-h-screen px-8">
       <form onSubmit={handleSignup} className="bg-white p-8 rounded shadow-md w-full max-w-100 md:w-100">
         <h1 className="text-2xl font-bold mb-6">Sign Up</h1>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <input
-            type="text"
-            placeholder="First name"
-            value={firstName}
-            onChange={e => setFirstName(e.target.value)}
-            className="w-full p-2 border rounded"
-            required
-          />
-          <input
-            type="text"
-            placeholder="Middle name (optional)"
-            value={middleName}
-            onChange={e => setMiddleName(e.target.value)}
-            className="w-full p-2 border rounded"
-          />
-          <input
-            type="text"
-            placeholder="Last name"
-            value={lastName}
-            onChange={e => setLastName(e.target.value)}
-            className="w-full p-2 border rounded"
-            required
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="First name"
+          value={firstName}
+          onChange={e => setFirstName(e.target.value)}
+          className="w-full p-2 mb-4 border rounded"
+          required
+        />
+        <input
+          type="text"
+          placeholder="Middle name (Optional)"
+          value={middleName}
+          onChange={e => setMiddleName(e.target.value)}
+          className="w-full p-2 mb-4 border rounded"
+          required={false}
+        />
+        <input
+          type="text"
+          placeholder="Last name"
+          value={lastName}
+          onChange={e => setLastName(e.target.value)}
+          className="w-full p-2 mb-4 border rounded"
+          required
+        />
         <input
           type="email"
           placeholder="Email"

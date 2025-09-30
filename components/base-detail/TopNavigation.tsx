@@ -15,8 +15,6 @@ interface TopNavigationProps {
   onRenameTable: (tableId: string) => void;
   onDeleteTable: (tableId: string) => void;
   canDeleteTable?: boolean;
-  onManageMembers?: () => void;
-  canManageMembers?: boolean;
 }
 
 export const TopNavigation = ({
@@ -31,9 +29,7 @@ export const TopNavigation = ({
   onToggleMasterList,
   onRenameTable,
   onDeleteTable,
-  canDeleteTable = true,
-  onManageMembers,
-  canManageMembers = false
+  canDeleteTable = true
 }: TopNavigationProps) => {
   const [isTableDropdownOpen, setIsTableDropdownOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -166,17 +162,7 @@ export const TopNavigation = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
-          {canManageMembers && onManageMembers && (
-            <button
-              type="button"
-              onClick={onManageMembers}
-              className="px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Manage members
-            </button>
-          )}
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
 
       {/* Tab navigation */}

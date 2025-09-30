@@ -17,10 +17,11 @@ export const useWorkspaces = () => {
       const { data: userResp } = await supabase.auth.getUser();
       const uid = userResp.user?.id;
       
-      // First get owned workspaces
+      // First get owned workspaces only (avoid duplicates with shared)
       const { data: ownerList, error: ownerError } = await supabase
         .from("workspaces")
         .select("id, name")
+        .eq("owner", uid)
         .order("created_at", { ascending: true });
         
       if (ownerError) throw ownerError;

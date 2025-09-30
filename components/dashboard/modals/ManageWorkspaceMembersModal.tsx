@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { MembershipService, type RoleType } from "@/lib/services/membership-service";
+import { supabase } from "@/lib/supabaseClient";
 
 interface ManageWorkspaceMembersModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
 
   const loadMembers = useMemo(() => async () => {
     if (!workspaceId) return;
@@ -45,9 +47,28 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
     }
   }, [isOpen, loadMembers]);
 
+  // Load workspace owner id
+  useEffect(() => {
+    const run = async () => {
+      if (!isOpen || !workspaceId) return;
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('owner')
+        .eq('id', workspaceId)
+        .single();
+      if (!error) setOwnerId((data as any)?.owner ?? null);
+    };
+    void run();
+  }, [isOpen, workspaceId]);
+
   const handleRoleChange = async (membershipId: string, role: RoleType) => {
     setError(null);
     try {
+      const member = members.find(m => m.membership_id === membershipId);
+      if (member && ownerId && member.user_id === ownerId) {
+        setError("Owner role cannot be changed.");
+        return;
+      }
       await MembershipService.updateWorkspaceMemberRole(membershipId, role);
       setMembers(prev => prev.map(m => m.membership_id === membershipId ? { ...m, role } : m));
     } catch (e: any) {
@@ -58,6 +79,11 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
   const handleRemove = async (membershipId: string) => {
     setError(null);
     try {
+      const member = members.find(m => m.membership_id === membershipId);
+      if (member && ownerId && member.user_id === ownerId) {
+        setError("Owner cannot be removed from their workspace.");
+        return;
+      }
       await MembershipService.removeWorkspaceMember(membershipId);
       setMembers(prev => prev.filter(m => m.membership_id !== membershipId));
     } catch (e: any) {
@@ -117,7 +143,9 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
                 ) : members.length === 0 ? (
                   <div className="p-4 text-sm text-gray-500">No members yet</div>
                 ) : (
-                  members.map((m) => (
+                  members.map((m) => {
+                    const isOwner = ownerId && m.user_id === ownerId;
+                    return (
                     <div key={m.membership_id} className="grid grid-cols-4 items-center px-4 py-2 text-sm">
                       <div className="truncate" title={m.user_id}>
                         <span>{m.full_name || 'Unknown user'}</span>
@@ -127,23 +155,26 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
                         <select
                           value={m.role}
                           onChange={(e) => handleRoleChange(m.membership_id, e.target.value as RoleType)}
-                          className="px-2 py-1 border border-gray-300 rounded"
+                          className="px-2 py-1 border border-gray-300 rounded disabled:opacity-50"
+                          disabled={Boolean(isOwner)}
                         >
                           <option value="member">Member</option>
-                          <option value="admin">Admin</option>
+                          <option value="admin">{isOwner ? 'Admin (Owner)' : 'Admin'}</option>
                         </select>
                       </div>
                       <div>{new Date(m.created_at).toLocaleString()}</div>
                       <div className="text-right">
                         <button
                           onClick={() => handleRemove(m.membership_id)}
-                          className="px-2 py-1 text-red-600 hover:bg-red-50 rounded"
+                          className="px-2 py-1 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+                          disabled={Boolean(isOwner)}
                         >
                           Remove
                         </button>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

@@ -24,7 +24,6 @@ import { EditFieldModal } from "@/components/base-detail/EditFieldModal";
 import { CreateTableModal } from "@/components/base-detail/CreateTableModal";
 import { RenameTableModal } from "@/components/base-detail/RenameTableModal";
 import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
-import { ManageMembersModal } from "@/components/base-detail/ManageMembersModal";
 import { RoleTagsManager } from "@/components/base-detail/RoleTagsManager";
 
 // Types
@@ -103,7 +102,7 @@ export default function BaseDetailPage() {
   
   const { contextMenu, setContextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const { role, can } = useRole({ baseId });
-  const [isManageMembersOpen, setIsManageMembersOpen] = useState(false);
+  // Removed base-level manage members; handled at workspace level only
 
   // State for editing field
   const [editingField, setEditingField] = useState<FieldRow | null>(null);
@@ -369,19 +368,7 @@ export default function BaseDetailPage() {
         ),
         onClick: openRenameModal,
       },
-      {
-        id: "manage_members",
-        label: "Manage Members",
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87M12 14a4 4 0 100-8 4 4 0 000 8z" />
-          </svg>
-        ),
-        onClick: () => {
-          setIsManageMembersOpen(true);
-          hideContextMenu();
-        },
-      },
+      // Manage members moved to workspace level
       {
         id: "delete",
         label: "Delete",
@@ -451,10 +438,8 @@ export default function BaseDetailPage() {
           onCreateTable={openCreateTableModal}
           onToggleMasterList={handleToggleMasterList}
           onRenameTable={handleRenameTable}
-            onDeleteTable={handleDeleteTable}
+          onDeleteTable={handleDeleteTable}
             canDeleteTable={can.delete}
-            onManageMembers={() => setIsManageMembersOpen(true)}
-            canManageMembers={role === 'owner' || role === 'admin'}
         />
 
         {/* Table Controls */}
@@ -662,14 +647,7 @@ export default function BaseDetailPage() {
         tableName={tables.find(t => t.id === contextMenu?.tableId)?.name || ""}
       />
 
-      {/* Manage Members Modal */}
-      {baseId && (
-        <ManageMembersModal
-          isOpen={isManageMembersOpen}
-          onClose={() => setIsManageMembersOpen(false)}
-          baseId={baseId}
-        />
-      )}
+      {/* Base-level Manage Members removed; manage members at workspace level only */}
     </div>
   );
 }
