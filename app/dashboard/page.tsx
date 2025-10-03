@@ -191,13 +191,15 @@ export default function Dashboard() {
   }, [switchToStarredView, loadStarredBases]);
 
   // Context menu options
-  const contextMenuOptions = selectedBase ? getBaseContextMenuOptions(selectedBase, {
-    onOpen: (baseId: string) => router.push(`/bases/${baseId}`),
-    onRename: openRenameModal,
-    onToggleStar: toggleStar,
-    onDuplicate: () => alert("Duplicate functionality would be implemented here"),
-    onDelete: handleDeleteBase
-  }, { canDelete: can.delete }) : [];
+  const contextMenuOptions = selectedBase
+    ? getBaseContextMenuOptions(selectedBase, {
+        onOpen: (baseId: string) => router.push(`/bases/${baseId}`),
+        onRename: openRenameModal,
+        onToggleStar: toggleStar,
+        onDuplicate: () => alert("Duplicate functionality would be implemented here"),
+        onDelete: handleDeleteBase,
+      }).filter((opt) => !(opt.id === "delete" && !can.delete))
+    : [];
 
   // Initialize dashboard on mount
   useEffect(() => {
