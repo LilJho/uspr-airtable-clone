@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { MembershipService, type RoleType } from "@/lib/services/membership-service";
+import { useTimezone } from "@/lib/hooks/useTimezone";
+import { formatInTimezone } from "@/lib/utils/date-helpers";
 import { supabase } from "@/lib/supabaseClient";
 
 interface ManageWorkspaceMembersModalProps {
@@ -18,6 +20,7 @@ type WorkspaceMemberRow = {
 };
 
 export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: ManageWorkspaceMembersModalProps) => {
+  const { timezone } = useTimezone();
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<WorkspaceMemberRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -162,7 +165,7 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
                           <option value="admin">{isOwner ? 'Admin (Owner)' : 'Admin'}</option>
                         </select>
                       </div>
-                      <div>{new Date(m.created_at).toLocaleString()}</div>
+                      <div>{formatInTimezone(m.created_at, timezone, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</div>
                       <div className="text-right">
                         <button
                           onClick={() => handleRemove(m.membership_id)}

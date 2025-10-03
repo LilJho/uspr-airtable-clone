@@ -15,3 +15,18 @@ export const formatRelative = (dateIso?: string | null): string => {
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? "" : "s"} ago`;
 };
+
+export function formatInTimezone(dateIso: string | null | undefined, timezone: string, opts?: Intl.DateTimeFormatOptions): string {
+  if (!dateIso) return '';
+  const d = new Date(dateIso);
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      ...opts,
+    }).format(d);
+  } catch {
+    return d.toLocaleString();
+  }
+}

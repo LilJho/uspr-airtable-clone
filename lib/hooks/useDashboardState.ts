@@ -37,6 +37,10 @@ export const useDashboardState = () => {
     setActiveView('starred');
   }, []);
 
+  const switchToAccountView = useCallback(() => {
+    setActiveView('account');
+  }, []);
+
   const openCreateModal = useCallback(() => {
     setIsCreateOpen(true);
   }, []);
@@ -120,6 +124,7 @@ export const useDashboardState = () => {
     switchToWorkspaceView,
     switchToHomeView,
     switchToStarredView,
+    switchToAccountView,
     openCreateModal,
     closeCreateModal,
     openRenameModal,

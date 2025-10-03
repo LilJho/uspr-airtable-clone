@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { MembershipService, type BaseMember, type RoleType } from "@/lib/services/membership-service";
+import { useTimezone } from "@/lib/hooks/useTimezone";
+import { formatInTimezone } from "@/lib/utils/date-helpers";
 
 interface ManageMembersModalProps {
   isOpen: boolean;
@@ -9,6 +11,7 @@ interface ManageMembersModalProps {
 }
 
 export const ManageMembersModal = ({ isOpen, onClose, baseId }: ManageMembersModalProps) => {
+  const { timezone } = useTimezone();
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<BaseMember[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -122,7 +125,7 @@ export const ManageMembersModal = ({ isOpen, onClose, baseId }: ManageMembersMod
                           <option value="admin">Admin</option>
                         </select>
                       </div>
-                      <div>{new Date(m.created_at).toLocaleString()}</div>
+                      <div>{formatInTimezone(m.created_at, timezone, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</div>
                       <div className="text-right">
                         <button
                           onClick={() => handleRemove(m.membership_id)}

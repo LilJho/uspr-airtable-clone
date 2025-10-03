@@ -52,7 +52,7 @@ export const Sidebar = ({
       <nav className="px-2 py-2">
         <button 
           onClick={() => onViewChange('home')} 
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors ${
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors cursor-pointer ${
             activeView === 'home' 
               ? 'bg-blue-100 text-blue-700 font-medium' 
               : 'text-gray-900 hover:bg-gray-100'
@@ -67,7 +67,7 @@ export const Sidebar = ({
         
         <button 
           onClick={() => onViewChange('starred')}
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-gray-700 hover:bg-gray-100 ${activeView === 'starred' ? 'bg-gray-100' : ''}`}
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-gray-700 hover:bg-gray-100 cursor-pointer ${activeView === 'starred' ? 'bg-gray-100' : ''}`}
         >
           <Star size={18} />
           <span>Starred</span>
@@ -76,7 +76,7 @@ export const Sidebar = ({
           )}
         </button>
         
-        <button className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-gray-700 hover:bg-gray-100">
+        <button className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-gray-700 hover:bg-gray-100 cursor-pointer">
           <Share2 size={18} />
           <span>Shared</span>
         </button>
@@ -136,7 +136,7 @@ export const Sidebar = ({
                     </div>
                   ) : (
                     <button
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors ${
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors cursor-pointer ${
                         activeView === 'workspace' && selectedWorkspaceId === workspace.id
                           ? 'bg-blue-100 text-blue-700 font-medium'
                           : 'text-gray-700 hover:bg-gray-100'
@@ -161,7 +161,7 @@ export const Sidebar = ({
                           e.stopPropagation();
                           onStartEditingWorkspace(workspace.id, workspace.name);
                         }}
-                        className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                        className="p-1 text-gray-400 hover:text-gray-600 rounded cursor-pointer"
                         title="Edit workspace"
                       >
                         <Edit3 className="w-3 h-3" />
@@ -171,7 +171,7 @@ export const Sidebar = ({
                           e.stopPropagation();
                           onDeleteWorkspace({ id: workspace.id, name: workspace.name });
                         }}
-                        className="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-40"
+                        className="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-40 cursor-pointer"
                         title="Delete workspace"
                         disabled={false /* gated by parent using menu visibility; RLS still protects */}
                       >
@@ -214,14 +214,16 @@ export const Sidebar = ({
         </div>
       )}
 
-      <div className="mt-auto px-4 pb-4">
-        <button
-          onClick={onCreateBase}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus size={16} /> Create
-        </button>
-      </div>
+      {activeView !== 'account' && (
+        <div className="mt-auto px-4 pb-4">
+          <button
+            onClick={onCreateBase}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 cursor-pointer"
+          >
+            <Plus size={16} /> Create
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

@@ -1,6 +1,7 @@
 import { useRouter } from "next/navigation";
 import { Rocket, Star, MoreVertical } from "lucide-react";
-import { formatRelative } from "@/lib/utils/date-helpers";
+import { formatRelative, formatInTimezone } from "@/lib/utils/date-helpers";
+import { useTimezone } from "@/lib/hooks/useTimezone";
 import type { BaseRecord } from "@/lib/types/dashboard";
 
 interface BaseTileProps {
@@ -10,6 +11,7 @@ interface BaseTileProps {
 
 export const BaseTile = ({ base, onContextMenu }: BaseTileProps) => {
   const router = useRouter();
+  const { timezone } = useTimezone();
 
   const handleClick = (e: React.MouseEvent) => {
     // Only navigate if the MoreVertical button wasn't clicked
@@ -58,7 +60,7 @@ export const BaseTile = ({ base, onContextMenu }: BaseTileProps) => {
       )}
       {lastOpened && (
         <div className="mt-2 text-xs text-gray-500">
-          Opened {formatRelative(lastOpened)} · {new Date(lastOpened).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          Opened {formatRelative(lastOpened)} · {formatInTimezone(lastOpened, timezone)}
         </div>
       )}
     </div>

@@ -13,6 +13,7 @@ import { useDashboardState } from "@/lib/hooks/useDashboardState";
 // Components
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { TopBar } from "@/components/dashboard/TopBar";
+import AccountPage from "@/app/account/page";
 import { Banner } from "@/components/dashboard/Banner";
 import { HomeView } from "@/components/dashboard/views/HomeView";
 import { WorkspaceView } from "@/components/dashboard/views/WorkspaceView";
@@ -88,6 +89,7 @@ export default function Dashboard() {
     switchToWorkspaceView,
     switchToHomeView,
     switchToStarredView,
+    switchToAccountView,
     openCreateModal,
     closeCreateModal,
     openRenameModal,
@@ -240,7 +242,7 @@ export default function Dashboard() {
         {/* Main Content */}
         <section className="flex min-w-0 flex-1 flex-col">
           {/* Top Bar */}
-          <TopBar user={user} onSignOut={signOut} />
+          <TopBar user={user} onSignOut={signOut} onOpenAccount={switchToAccountView} />
 
           {/* Banner */}
           {showBanner && <Banner onClose={() => setShowBanner(false)} />}
@@ -282,6 +284,12 @@ export default function Dashboard() {
                 onCollectionViewChange={setCollectionView}
                 onBaseContextMenu={handleBaseContextMenu}
               />
+            )}
+
+            {activeView === 'account' && (
+              <div className="max-w-5xl">
+                <AccountPage />
+              </div>
             )}
           </main>
 

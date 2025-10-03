@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { AuditLogService, type AuditLogRow } from "@/lib/services/audit-log-service";
+import { formatInTimezone } from "@/lib/utils/date-helpers";
+import { useTimezone } from "@/lib/hooks/useTimezone";
 
 interface WorkspaceActivityModalProps {
   isOpen: boolean;
@@ -18,6 +20,7 @@ function formatAction(log: AuditLogRow): string {
 }
 
 export const WorkspaceActivityModal = ({ isOpen, onClose, workspaceId }: WorkspaceActivityModalProps) => {
+  const { timezone } = useTimezone();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<AuditLogRow[]>([]);
@@ -74,7 +77,7 @@ export const WorkspaceActivityModal = ({ isOpen, onClose, workspaceId }: Workspa
               {logs.map((log) => (
                 <div key={log.id} className="px-4 py-3 text-sm">
                   <div className="text-gray-900">{formatAction(log)}</div>
-                  <div className="text-xs text-gray-500">{new Date(log.created_at).toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">{formatInTimezone(log.created_at, timezone, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</div>
                 </div>
               ))}
             </div>

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTimezone } from "@/lib/hooks/useTimezone";
+import { formatInTimezone } from "@/lib/utils/date-helpers";
 import { MoreVertical, Star } from "lucide-react";
 import { ContextMenu, useContextMenu, type ContextMenuOption } from "@/components/ui/context-menu";
 import { RenameModal } from "@/components/ui/rename-modal";
@@ -21,6 +23,7 @@ type BaseSummary = {
 };
 
 export default function BasesPage() {
+  const { timezone } = useTimezone();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [bases, setBases] = useState<BaseSummary[]>([]);
@@ -320,7 +323,7 @@ export default function BasesPage() {
                 {base.description && (
                   <p className="text-sm text-gray-600 mb-2 line-clamp-2">{base.description}</p>
                 )}
-                <p className="text-xs text-gray-500">Created {new Date(base.created_at).toLocaleString()}</p>
+                <p className="text-xs text-gray-500">Created {formatInTimezone(base.created_at, timezone, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</p>
               </div>
             ))}
           </div>

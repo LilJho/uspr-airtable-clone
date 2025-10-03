@@ -2,6 +2,8 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { AuditLogService, type AuditLogRow } from "@/lib/services/audit-log-service";
+import { useTimezone } from "@/lib/hooks/useTimezone";
+import { formatInTimezone } from "@/lib/utils/date-helpers";
 
 function formatAction(log: AuditLogRow): string {
   const actor = log.actor?.full_name || "Someone";
@@ -16,6 +18,7 @@ function formatAction(log: AuditLogRow): string {
 export default function WorkspaceActivityPage() {
   const params = useParams<{ id: string }>();
   const workspaceId = useMemo(() => (Array.isArray(params?.id) ? params.id[0] : params?.id), [params]);
+  const { timezone } = useTimezone();
 
   const [logs, setLogs] = useState<AuditLogRow[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -65,7 +68,7 @@ export default function WorkspaceActivityPage() {
         {logs.map(log => (
           <li key={log.id} style={{ borderBottom: '1px solid #eee', padding: '8px 0' }}>
             <div style={{ fontSize: 14 }}>{formatAction(log)}</div>
-            <div style={{ fontSize: 12, color: '#666' }}>{new Date(log.created_at).toLocaleString()}</div>
+            <div style={{ fontSize: 12, color: '#666' }}>{formatInTimezone(log.created_at, timezone, { year: 'numeric', month: 'short', day: '2-digit', hour: 'numeric', minute: '2-digit' })}</div>
           </li>
         ))}
       </ul>
