@@ -20,6 +20,7 @@ interface WorkspaceViewProps {
   onBaseContextMenu: (e: React.MouseEvent, base: BaseRecord) => void;
   onManageMembers?: () => void;
   canManageMembers?: boolean;
+  onDeleteBaseClick?: (base: BaseRecord) => void;
 }
 
 export const WorkspaceView = ({
@@ -32,7 +33,8 @@ export const WorkspaceView = ({
   onCreateBase,
   onBaseContextMenu,
   onManageMembers,
-  canManageMembers = false
+  canManageMembers = false,
+  onDeleteBaseClick
 }: WorkspaceViewProps) => {
   const currentWorkspace = workspaces.find(w => w.id === selectedWorkspaceId);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
@@ -45,7 +47,7 @@ export const WorkspaceView = ({
           {canManageMembers && onManageMembers && (
             <button
               onClick={onManageMembers}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
             >
               Manage members
             </button>
@@ -53,14 +55,14 @@ export const WorkspaceView = ({
           {selectedWorkspaceId && (
             <button
               onClick={() => setIsActivityOpen(true)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
             >
               Activity
             </button>
           )}
           <button 
             onClick={onCreateBase}
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 cursor-pointer"
           >
             <Plus size={16} />
             Create base
@@ -90,6 +92,7 @@ export const WorkspaceView = ({
                   key={base.id} 
                   base={base}
                   onContextMenu={onBaseContextMenu}
+                  onDeleteClick={onDeleteBaseClick}
                 />
               ))
             )}
@@ -109,7 +112,7 @@ export const WorkspaceView = ({
               </div>
             ) : (
               sortBases(workspaceBases, sortOption).map(base => (
-                <BaseRow key={base.id} base={base} />
+                <BaseRow key={base.id} base={base} onDeleteClick={onDeleteBaseClick} />
               ))
             )}
           </div>

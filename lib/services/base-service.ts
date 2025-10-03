@@ -133,6 +133,18 @@ export class BaseService {
     if (error) throw error;
   }
 
+  static async updateBase(baseId: string, updates: { name?: string; description?: string | null }): Promise<void> {
+    const { error } = await supabase
+      .from('bases')
+      .update({
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.description !== undefined ? { description: updates.description } : {}),
+      })
+      .eq('id', baseId);
+
+    if (error) throw error;
+  }
+
   static async toggleStar(baseId: string, isStarred: boolean): Promise<void> {
     const { error } = await supabase
       .from("bases")

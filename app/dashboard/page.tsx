@@ -21,6 +21,7 @@ import { StarredView } from "@/components/dashboard/views/StarredView";
 import { CreateBaseModal } from "@/components/dashboard/modals/CreateBaseModal";
 import { CreateWorkspaceModal } from "@/components/dashboard/modals/CreateWorkspaceModal";
 import { DeleteWorkspaceModal } from "@/components/dashboard/modals/DeleteWorkspaceModal";
+import { DeleteBaseModal } from "@/components/dashboard/modals/DeleteBaseModal";
 import { ManageWorkspaceMembersModal } from "@/components/dashboard/modals/ManageWorkspaceMembersModal";
 
 // Utils
@@ -33,6 +34,8 @@ import type { BaseRecord } from "@/lib/types/dashboard";
 export default function Dashboard() {
   const router = useRouter();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+  const [isDeleteBaseOpen, setIsDeleteBaseOpen] = useState(false);
+  const [baseToDelete, setBaseToDelete] = useState<BaseRecord | null>(null);
 
   // Custom hooks
   const { user, loading, signOut } = useAuth();
@@ -46,6 +49,7 @@ export default function Dashboard() {
     loadStarredBases,
     createBase,
     renameBase,
+    updateBaseDetails,
     toggleStar,
     deleteBase,
     clearError: clearBasesError
@@ -82,6 +86,7 @@ export default function Dashboard() {
     setCollectionView,
     setSortOption,
     setSelectedWorkspaceId,
+    setSelectedBase,
     setShowBanner,
     setIsCreateWorkspaceOpen,
     setWorkspacesCollapsed,
@@ -120,21 +125,37 @@ export default function Dashboard() {
   const handleBaseContextMenu = useCallback((e: React.MouseEvent, base: BaseRecord) => {
     e.preventDefault();
     e.stopPropagation();
-    openRenameModal(base);
+    setSelectedBase(base);
     showContextMenu(e);
-  }, [openRenameModal, showContextMenu]);
+  }, [setSelectedBase, showContextMenu]);
 
   const handleRenameBase = useCallback(async (newName: string) => {
     if (!selectedBase) return;
     await renameBase(selectedBase.id, newName);
   }, [selectedBase, renameBase]);
 
+  const handleEditBase = useCallback(async (payload: { name: string; description: string }) => {
+    if (!selectedBase) return;
+    await updateBaseDetails(selectedBase.id, payload);
+  }, [selectedBase, updateBaseDetails]);
+
+  const openDeleteBaseModal = useCallback((base: BaseRecord) => {
+    setBaseToDelete(base);
+    setIsDeleteBaseOpen(true);
+  }, []);
+
+  const closeDeleteBaseModal = useCallback(() => {
+    setIsDeleteBaseOpen(false);
+    setBaseToDelete(null);
+  }, []);
+
   const handleDeleteBase = useCallback(async (base: BaseRecord) => {
-    if (!confirm(`Are you sure you want to delete "${base.name}"? This action cannot be undone.`)) {
-      return;
-    }
-    await deleteBase(base.id);
-  }, [deleteBase]);
+    openDeleteBaseModal(base);
+  }, [openDeleteBaseModal]);
+
+  const handleDeleteBaseShortcut = useCallback((base: BaseRecord) => {
+    openDeleteBaseModal(base);
+  }, [openDeleteBaseModal]);
 
   const handleCreateBase = useCallback(async (formData: { name: string; description: string; workspaceId: string }) => {
     await createBase(formData);
@@ -276,6 +297,7 @@ export default function Dashboard() {
                 onBaseContextMenu={handleBaseContextMenu}
                 onManageMembers={() => setIsManageWorkspaceMembersOpen(true)}
                 canManageMembers={role === 'owner' || role === 'admin'}
+                onDeleteBaseClick={handleDeleteBaseShortcut}
               />
             )}
             
@@ -338,13 +360,27 @@ export default function Dashboard() {
             />
           )}
 
-          {/* Rename Modal */}
+          {/* Edit Base Modal */}
           <RenameModal
             isOpen={isRenameModalOpen}
             currentName={selectedBase?.name || ""}
+            currentDescription={selectedBase?.description || ""}
             onClose={closeRenameModal}
+            onSave={handleEditBase}
             onRename={handleRenameBase}
-            title="Rename Base"
+            title="Edit Base"
+          />
+
+          {/* Delete Base Modal */}
+          <DeleteBaseModal
+            isOpen={isDeleteBaseOpen}
+            base={baseToDelete}
+            onClose={closeDeleteBaseModal}
+            onDelete={async () => {
+              if (!baseToDelete) return;
+              await deleteBase(baseToDelete.id);
+              closeDeleteBaseModal();
+            }}
           />
         </section>
       </div>

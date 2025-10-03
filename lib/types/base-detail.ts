@@ -8,6 +8,7 @@ export type BaseRow = {
   name: string;
   description: string | null;
   created_at: string;
+  last_opened_at?: string | null;
 };
 
 export type TableRow = {

@@ -6,8 +6,10 @@ import Link from "next/link";
 import { useTimezone } from "@/lib/hooks/useTimezone";
 import { formatInTimezone } from "@/lib/utils/date-helpers";
 import { MoreVertical, Star } from "lucide-react";
+import { DeleteBaseModal } from "@/components/dashboard/modals/DeleteBaseModal";
 import { ContextMenu, useContextMenu, type ContextMenuOption } from "@/components/ui/context-menu";
 import { RenameModal } from "@/components/ui/rename-modal";
+import { Trash2 } from "lucide-react";
 
 type SupabaseUser = {
   id: string;
@@ -31,6 +33,7 @@ export default function BasesPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedBase, setSelectedBase] = useState<BaseSummary | null>(null);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
   const router = useRouter();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
@@ -82,6 +85,22 @@ export default function BasesPage() {
     ));
   };
 
+  const handleEditBase = async (payload: { name: string; description: string }): Promise<void> => {
+    if (!selectedBase) return;
+    const { error } = await supabase
+      .from("bases")
+      .update({ name: payload.name, description: payload.description || null })
+      .eq("id", selectedBase.id);
+
+    if (error) throw new Error(error.message);
+
+    setBases(prev => prev.map(base => 
+      base.id === selectedBase.id 
+        ? { ...base, name: payload.name, description: payload.description || null }
+        : base
+    ));
+  };
+
   const handleDuplicateBase = async (base: BaseSummary): Promise<void> => {
     // For now, just show a message - full implementation would require duplicating all tables and data
     alert(`Duplicate functionality for "${base.name}" would be implemented here`);
@@ -109,22 +128,8 @@ export default function BasesPage() {
   };
 
   const handleDeleteBase = async (base: BaseSummary): Promise<void> => {
-    if (!confirm(`Are you sure you want to delete "${base.name}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("bases")
-      .delete()
-      .eq("id", base.id);
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    // Update the local state
-    setBases(prev => prev.filter(b => b.id !== base.id));
+    setSelectedBase(base);
+    setIsDeleteOpen(true);
   };
 
   const getContextMenuOptions = (base: BaseSummary): ContextMenuOption[] => [
@@ -309,15 +314,28 @@ export default function BasesPage() {
                   <MoreVertical size={18} />
                 </button>
                 
-                <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-3">
                   <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
                     <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   </div>
+                <div className="flex items-center gap-2">
                   {base.is_starred && (
                     <Star className="w-5 h-5 text-yellow-500 fill-current" />
                   )}
+                  <button
+                    className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete base"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteBase(base);
+                    }}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
                 </div>
                 <h3 className="font-semibold text-gray-900 mb-1">{base.name}</h3>
                 {base.description && (
@@ -339,16 +357,37 @@ export default function BasesPage() {
           />
         )}
 
-        {/* Rename Modal */}
+        {/* Edit Modal */}
         <RenameModal
           isOpen={isRenameModalOpen}
           currentName={selectedBase?.name || ""}
+          currentDescription={selectedBase?.description || ""}
           onClose={() => {
             setIsRenameModalOpen(false);
             setSelectedBase(null);
           }}
+          onSave={handleEditBase}
           onRename={handleRenameBase}
-          title="Rename Base"
+          title="Edit Base"
+        />
+
+        {/* Delete Modal */}
+        <DeleteBaseModal
+          isOpen={isDeleteOpen}
+          base={selectedBase ? { id: selectedBase.id, name: selectedBase.name } : null}
+          onClose={() => { setIsDeleteOpen(false); setSelectedBase(null); }}
+          onDelete={async () => {
+            if (!selectedBase) return;
+            const { error } = await supabase
+              .from('bases')
+              .delete()
+              .eq('id', selectedBase.id);
+            if (error) {
+              setErrorMessage(error.message);
+              return;
+            }
+            setBases(prev => prev.filter(b => b.id !== selectedBase.id));
+          }}
         />
       </main>
     </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { Crown } from "lucide-react";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
@@ -106,6 +106,14 @@ export default function BaseDetailPage() {
 
   // State for editing field
   const [editingField, setEditingField] = useState<FieldRow | null>(null);
+
+  // Mark base as opened on mount/id change
+  useEffect(() => {
+    if (!baseId) return;
+    BaseDetailService.markBaseOpened(baseId).catch((err) => {
+      console.error('Failed to mark base as opened', err);
+    });
+  }, [baseId]);
 
   // Event handlers
   const handleRenameBase = async (newName: string) => {

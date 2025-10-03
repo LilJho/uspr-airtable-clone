@@ -90,6 +90,27 @@ export const useBases = () => {
     }
   }, []);
 
+  const updateBaseDetails = useCallback(async (baseId: string, payload: { name?: string; description?: string }): Promise<void> => {
+    try {
+      setError(null);
+      await BaseService.updateBase(baseId, {
+        ...(payload.name !== undefined ? { name: payload.name } : {}),
+        ...(payload.description !== undefined ? { description: payload.description } : {}),
+      });
+
+      const updateBase = (base: BaseRecord) =>
+        base.id === baseId ? { ...base, ...payload } : base;
+
+      setRecentBases(prev => prev.map(updateBase));
+      setWorkspaceBases(prev => prev.map(updateBase));
+      setStarredBases(prev => prev.map(updateBase));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update base';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
   const toggleStar = useCallback(async (base: BaseRecord): Promise<void> => {
     try {
       setError(null);
@@ -149,6 +170,7 @@ export const useBases = () => {
     loadStarredBases,
     createBase,
     renameBase,
+    updateBaseDetails,
     toggleStar,
     deleteBase,
     clearError: () => setError(null)
