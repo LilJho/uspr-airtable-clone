@@ -1,10 +1,13 @@
 import { Plus } from "lucide-react";
+import Link from "next/link";
 import { BaseTile } from "../BaseTile";
 import { BaseRow } from "../BaseRow";
 import { EmptyState } from "../EmptyState";
 import { ViewToggle } from "../ViewToggle";
 import { sortBases } from "@/lib/utils/sort-helpers";
 import type { BaseRecord, CollectionView, SortOption, WorkspaceRecord } from "@/lib/types/dashboard";
+import { useState } from "react";
+import { WorkspaceActivityModal } from "../modals/WorkspaceActivityModal";
 
 interface WorkspaceViewProps {
   workspaceBases: BaseRecord[];
@@ -32,6 +35,7 @@ export const WorkspaceView = ({
   canManageMembers = false
 }: WorkspaceViewProps) => {
   const currentWorkspace = workspaces.find(w => w.id === selectedWorkspaceId);
+  const [isActivityOpen, setIsActivityOpen] = useState(false);
 
   return (
     <>
@@ -44,6 +48,14 @@ export const WorkspaceView = ({
               className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               Manage members
+            </button>
+          )}
+          {selectedWorkspaceId && (
+            <button
+              onClick={() => setIsActivityOpen(true)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Activity
             </button>
           )}
           <button 
@@ -59,7 +71,13 @@ export const WorkspaceView = ({
           />
         </div>
       </div>
-      
+      {selectedWorkspaceId && (
+        <WorkspaceActivityModal
+          isOpen={isActivityOpen}
+          onClose={() => setIsActivityOpen(false)}
+          workspaceId={selectedWorkspaceId}
+        />
+      )}
       {collectionView === 'grid' ? (
         <>
           <div className="mb-2 text-sm text-gray-600">Last opened</div>
