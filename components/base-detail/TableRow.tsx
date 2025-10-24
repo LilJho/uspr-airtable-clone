@@ -10,9 +10,11 @@ interface TableRowProps {
   selectedTableId: string | null;
   rowIndex: number;
   savingCell: SavingCell;
+  isSelected: boolean;
   onUpdateCell: (recordId: string, fieldId: string, value: unknown) => void;
   onDeleteRow: (recordId: string) => void;
   onRowContextMenu: (e: React.MouseEvent, record: RecordRow) => void;
+  onSelectRow: (recordId: string, checked: boolean) => void;
 }
 
 export const TableRow = ({
@@ -22,9 +24,11 @@ export const TableRow = ({
   selectedTableId,
   rowIndex,
   savingCell,
+  isSelected,
   onUpdateCell,
   onDeleteRow,
-  onRowContextMenu
+  onRowContextMenu,
+  onSelectRow
 }: TableRowProps) => {
   const isSaving = savingCell?.recordId === record.id;
   
@@ -37,7 +41,18 @@ export const TableRow = ({
   const tableName = recordTable?.name;
 
   return (
-    <div className="flex border-b border-gray-200 hover:bg-gray-50 group">
+    <div className={`flex border-b border-gray-200 hover:bg-gray-50 group ${isSelected ? 'bg-blue-50' : ''}`}>
+      {/* Checkbox column */}
+      <div className="w-10 flex-shrink-0 border-r border-gray-200 flex items-center justify-start pl-3">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => onSelectRow(record.id, e.target.checked)}
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+      
       {/* Row number and table indicator */}
       <div className="w-12 flex-shrink-0 border-r border-gray-200 bg-gray-100 flex flex-col items-center justify-center py-1">
         <span className="text-xs text-gray-500">{rowIndex + 1}</span>
@@ -62,40 +77,6 @@ export const TableRow = ({
         };
 
         const renderCellContent = () => {
-          if (shouldRenderAsLabel(field.name, field.type) && value) {
-            // Check if this is a select field with custom options and colors
-            if ((field.type === 'single_select' || field.type === 'multi_select') && field.options) {
-              const optionKey = String(value);
-              const optionData = field.options[optionKey] as { label?: string; color?: string } | undefined;
-              
-              if (optionData?.color) {
-                return (
-                  <StatusLabel 
-                    type="status" 
-                    value={optionData.label || String(value)} 
-                    customColor={optionData.color}
-                  />
-                );
-              }
-            }
-            
-            // Determine label type based on field name
-            let labelType: 'urgency' | 'lead_source' | 'status' | 'deal_type' = 'status';
-            const fieldName = field.name.toLowerCase();
-            
-            if (fieldName.includes('urgency') || fieldName.includes('priority')) {
-              labelType = 'urgency';
-            } else if (fieldName.includes('source') && fieldName.includes('lead')) {
-              labelType = 'lead_source';
-            } else if (fieldName.includes('deal') && fieldName.includes('type')) {
-              labelType = 'deal_type';
-            } else if (fieldName.includes('status')) {
-              labelType = 'status';
-            }
-
-            return <StatusLabel type={labelType} value={String(value)} />;
-          }
-
           return (
             <CellEditor
               field={field}
@@ -110,7 +91,7 @@ export const TableRow = ({
         return (
           <div
             key={field.id}
-            className="flex-1 min-w-[150px] border-r border-gray-200 relative p-3"
+            className="flex-1 min-w-[150px] max-w-[300px] border-r border-gray-200 relative p-3 flex items-center"
           >
             {renderCellContent()}
           </div>

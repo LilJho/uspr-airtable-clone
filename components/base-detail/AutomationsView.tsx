@@ -11,6 +11,7 @@ interface AutomationsViewProps {
   onUpdateAutomation: (id: string, updates: Partial<Automation>) => void;
   onDeleteAutomation: (id: string) => void;
   onToggleAutomation: (id: string) => void;
+  onFieldCreated?: (tableId: string) => void;
 }
 
 export const AutomationsView = ({
@@ -20,7 +21,8 @@ export const AutomationsView = ({
   onCreateAutomation,
   onUpdateAutomation,
   onDeleteAutomation,
-  onToggleAutomation
+  onToggleAutomation,
+  onFieldCreated
 }: AutomationsViewProps) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
@@ -197,6 +199,7 @@ export const AutomationsView = ({
           fields={fields}
           onClose={() => setIsCreateModalOpen(false)}
           onSave={onCreateAutomation}
+          onFieldCreated={onFieldCreated ? () => onFieldCreated('') : undefined}
         />
       )}
 
@@ -210,6 +213,7 @@ export const AutomationsView = ({
             onUpdateAutomation(editingAutomation.id, automation);
             setEditingAutomation(null);
           }}
+          onFieldCreated={onFieldCreated ? () => onFieldCreated('') : undefined}
         />
       )}
     </div>

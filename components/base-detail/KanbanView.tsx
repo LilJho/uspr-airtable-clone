@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { ChevronDown } from "lucide-react";
 import type { RecordRow, FieldRow } from "@/lib/types/base-detail";
 
 interface KanbanViewProps {
@@ -20,42 +21,125 @@ export const KanbanView = ({
 }: KanbanViewProps) => {
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [selectedStackFieldId, setSelectedStackFieldId] = useState<string | null>(null);
+  const [isFieldDropdownOpen, setIsFieldDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   
-  // Find the first single_select field to use as columns
-  const statusField = fields.find(f => f.type === 'single_select');
+  // Get all single_select fields for stacking options
+  const singleSelectFields = fields.filter(f => f.type === 'single_select');
+  
+  // Use selected field or default to first single_select field
+  const stackField = selectedStackFieldId 
+    ? fields.find(f => f.id === selectedStackFieldId)
+    : singleSelectFields[0];
 
-  // Get available options from the status field
-  const statusOptions = useMemo(() => {
-    if (!statusField) return [];
-    return (statusField.options as { choices?: string[] })?.choices || [];
-  }, [statusField]);
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsFieldDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Get available options from the stack field
+  const stackOptions = useMemo(() => {
+    if (!stackField) return [];
+    
+    const options = stackField.options;
+    
+    // Handle new format: { optionId: { label: string, color: string } }
+    if (options && typeof options === 'object' && !Array.isArray(options)) {
+      const hasNewFormat = Object.values(options).some(val => 
+        typeof val === 'object' && val !== null && 'label' in val
+      );
+      
+      if (hasNewFormat) {
+        return Object.entries(options).map(([key, option]: [string, any]) => ({
+          key,
+          label: option.label
+        }));
+      }
+    }
+    
+    // Handle old format: { choices: string[] }
+    const choices = (options as { choices?: string[] })?.choices;
+    if (Array.isArray(choices)) {
+      return choices.map(choice => ({ key: choice, label: choice }));
+    }
+    
+    return [];
+  }, [stackField]);
   
-  // Group records by status
+  // Group records by the selected stack field
   const groupedRecords = useMemo(() => {
     const groups: Record<string, RecordRow[]> = {};
     
-    // Initialize all status options as empty groups
-    statusOptions.forEach(option => {
-      groups[option] = [];
+    // Initialize all stack options as empty groups
+    stackOptions.forEach(option => {
+      groups[option.label] = [];
     });
     
-    // Add an "Uncategorized" group for records without a status
+    // Add an "Uncategorized" group for records without a value
     groups['Uncategorized'] = [];
     
-    // Group records by their status value
+    // Group records by their stack field value
     records.forEach(record => {
-      const statusValue = statusField ? record.values?.[statusField.id] : null;
-      const group = statusValue && typeof statusValue === 'string' && statusOptions.includes(statusValue) ? statusValue : 'Uncategorized';
+      const stackValue = stackField ? record.values?.[stackField.id] : null;
+      
+      // Find matching option by key or label
+      const matchingOption = stackOptions.find(option => 
+        option.key === stackValue || option.label === stackValue
+      );
+      
+      const group = matchingOption ? matchingOption.label : 'Uncategorized';
       groups[group].push(record);
     });
     
+    // If no stack options are defined, create columns based on actual values found
+    if (stackOptions.length === 0) {
+      const uniqueValues = new Set<string>();
+      records.forEach(record => {
+        const stackValue = stackField ? record.values?.[stackField.id] : null;
+        if (stackValue && typeof stackValue === 'string') {
+          uniqueValues.add(stackValue);
+        }
+      });
+      
+      // Create groups for unique values
+      uniqueValues.forEach(value => {
+        if (!groups[value]) {
+          groups[value] = [];
+        }
+      });
+      
+      // Re-group records
+      records.forEach(record => {
+        const stackValue = stackField ? record.values?.[stackField.id] : null;
+        const group = (stackValue && typeof stackValue === 'string') ? stackValue : 'Uncategorized';
+        if (groups[group]) {
+          groups[group].push(record);
+        }
+      });
+    }
+    
+    // Only show "Uncategorized" column if it has records
+    if (groups['Uncategorized'].length === 0) {
+      delete groups['Uncategorized'];
+    }
+    
     return groups;
-  }, [records, statusField?.id, statusOptions]);
+  }, [records, stackField?.id, stackOptions]);
 
-  // Get other fields to display in cards (excluding the status field)
-  const displayFields = fields.filter(f => statusField && f.id !== statusField.id).slice(0, 3); // Show max 3 fields
+  // Get other fields to display in cards (excluding the stack field)
+  const displayFields = fields.filter(f => stackField && f.id !== stackField.id).slice(0, 3); // Show max 3 fields
 
-  if (!statusField) {
+  if (!stackField) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -64,7 +148,7 @@ export const KanbanView = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Kanban View Needs Status Field</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Kanban View Needs Single Select Field</h3>
           <p className="text-gray-500 mb-4">Add a single select field to organize records in columns</p>
         </div>
       </div>
@@ -93,13 +177,17 @@ export const KanbanView = ({
     setDragOverColumn(null);
   };
 
-  const handleDrop = (e: React.DragEvent, newStatus: string) => {
+  const handleDrop = (e: React.DragEvent, newValue: string) => {
     e.preventDefault();
     const recordId = e.dataTransfer.getData('text/plain');
     
     if (recordId && draggedCard === recordId) {
-      // Update the record's status field
-      onUpdateCell(recordId, statusField.id, newStatus);
+      // Find the option key for the label
+      const matchingOption = stackOptions.find(option => option.label === newValue);
+      const valueToSet = matchingOption ? matchingOption.key : newValue;
+      
+      // Update the record's stack field
+      onUpdateCell(recordId, stackField.id, valueToSet);
     }
     
     setDraggedCard(null);
@@ -108,27 +196,68 @@ export const KanbanView = ({
 
   return (
     <div className="h-full flex flex-col">
+      {/* Field Selection Header */}
+      <div className="px-6 py-4 border-b border-gray-200 bg-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-700">Group by:</span>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setIsFieldDropdownOpen(!isFieldDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <span>{stackField?.name || 'Select field'}</span>
+                <ChevronDown size={16} className={`transition-transform ${isFieldDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isFieldDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  {singleSelectFields.map((field) => (
+                    <button
+                      key={field.id}
+                      onClick={() => {
+                        setSelectedStackFieldId(field.id);
+                        setIsFieldDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${
+                        selectedStackFieldId === field.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                      }`}
+                    >
+                      {field.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="text-sm text-gray-500">
+            {records.length} records
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-x-auto">
         <div className="flex gap-6 p-6 min-w-max h-full">
-          {Object.entries(groupedRecords).map(([status, statusRecords]) => (
-            <div key={status} className="flex-shrink-0 w-80">
+          {Object.entries(groupedRecords).map(([value, valueRecords]) => (
+            <div key={value} className="flex-shrink-0 w-80">
               {/* Column Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
-                    {/* Status indicator dot */}
+                    {/* Value indicator dot */}
                     <div className={`w-3 h-3 rounded-full ${
-                      status === 'Uncategorized' ? 'bg-gray-400' :
-                      status === 'New Buyer' ? 'bg-orange-500' :
-                      status === 'Qualified Buyer' ? 'bg-blue-500' :
-                      status === 'Ready to Buy' ? 'bg-green-500' :
-                      status === 'Closed Won' ? 'bg-purple-500' :
-                      'bg-gray-400'
+                      value === 'Uncategorized' ? 'bg-gray-400' :
+                      // Generate colors based on value hash for consistent coloring
+                      (() => {
+                        const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-red-500', 'bg-yellow-500', 'bg-indigo-500', 'bg-pink-500'];
+                        const hash = value.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+                        return colors[Math.abs(hash) % colors.length];
+                      })()
                     }`}></div>
-                    <h3 className="font-medium text-gray-900">{status}</h3>
+                    <h3 className="font-medium text-gray-900">{value}</h3>
                   </div>
                   <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                    {statusRecords.length}
+                    {valueRecords.length}
                   </span>
                 </div>
               </div>
@@ -136,15 +265,15 @@ export const KanbanView = ({
               {/* Column Content */}
               <div 
                 className={`min-h-[200px] p-2 rounded-lg border-2 border-dashed transition-colors ${
-                  dragOverColumn === status 
+                  dragOverColumn === value 
                     ? 'border-blue-400 bg-blue-50' 
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
-                onDragOver={(e) => handleDragOver(e, status)}
+                onDragOver={(e) => handleDragOver(e, value)}
                 onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, status)}
+                onDrop={(e) => handleDrop(e, value)}
               >
-                {statusRecords.map((record) => (
+                {valueRecords.map((record) => (
                   <div
                     key={record.id}
                     draggable
@@ -186,6 +315,13 @@ export const KanbanView = ({
                 >
                   + Add record
                 </button>
+                
+                {/* Quick set value for existing records */}
+                {valueRecords.length === 0 && value !== 'Uncategorized' && (
+                  <div className="mt-2 p-2 text-xs text-gray-400 text-center">
+                    Drag records here to set as "{value}"
+                  </div>
+                )}
               </div>
             </div>
           ))}

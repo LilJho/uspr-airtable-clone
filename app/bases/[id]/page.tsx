@@ -23,6 +23,8 @@ import { EditFieldModal } from "@/components/base-detail/EditFieldModal";
 import { CreateTableModal } from "@/components/base-detail/CreateTableModal";
 import { RenameTableModal } from "@/components/base-detail/RenameTableModal";
 import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
+import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
+import { DeleteFieldModal } from "@/components/base-detail/DeleteFieldModal";
 
 // Types
 import type { FieldRow, RecordRow, FieldType } from "@/lib/types/base-detail";
@@ -58,13 +60,15 @@ export default function BaseDetailPage() {
     deleteField,
     updateCell,
     deleteRecord,
+    bulkDeleteRecords,
     createRecord,
     createAutomation,
     updateAutomation,
     deleteAutomation,
     toggleAutomation,
     loadFields,
-    loadRecords
+    loadRecords,
+    loadAllFields
   } = useBaseDetail(baseId);
   
   const {
@@ -98,6 +102,16 @@ export default function BaseDetailPage() {
     closeImportModal
   } = useBaseDetailState();
   
+  // Add state for delete base modal
+  const [isDeleteBaseModalOpen, setIsDeleteBaseModalOpen] = useState(false);
+  const openDeleteBaseModal = () => setIsDeleteBaseModalOpen(true);
+  const closeDeleteBaseModal = () => setIsDeleteBaseModalOpen(false);
+
+  // Add state for delete field modal
+  const [isDeleteFieldModalOpen, setIsDeleteFieldModalOpen] = useState(false);
+  const openDeleteFieldModal = () => setIsDeleteFieldModalOpen(true);
+  const closeDeleteFieldModal = () => setIsDeleteFieldModalOpen(false);
+  
   const { contextMenu, setContextMenu, showContextMenu, hideContextMenu } = useContextMenu();
 
   // State for editing field
@@ -108,13 +122,13 @@ export default function BaseDetailPage() {
     await updateBase({ name: newName });
   };
 
-  const handleDeleteBase = async () => {
+  const handleDeleteBaseClick = () => {
+    openDeleteBaseModal();
+    hideContextMenu();
+  };
+
+  const handleDeleteBaseConfirm = async () => {
     if (!base) return;
-    
-    if (!confirm(`Are you sure you want to delete "${base.name}"? This action cannot be undone.`)) {
-      return;
-    }
-    
     await deleteBase();
   };
 
@@ -133,7 +147,7 @@ export default function BaseDetailPage() {
   const handleRowContextMenu = (e: React.MouseEvent, record: RecordRow) => {
     e.preventDefault();
     e.stopPropagation();
-    showContextMenu(e);
+    showContextMenu(e, 'record', record);
   };
 
   const handleCreateTable = async (tableName: string) => {
@@ -264,17 +278,18 @@ export default function BaseDetailPage() {
     }
   };
 
-  const handleDeleteField = async () => {
+  const handleDeleteField = () => {
+    if (!contextMenu?.data) return;
+    openDeleteFieldModal();
+    hideContextMenu();
+  };
+
+  const handleDeleteFieldConfirm = async () => {
     if (!contextMenu?.data?.id) return;
     
-    const field = contextMenu.data;
-    if (!confirm(`Are you sure you want to delete the field "${field.name}"? This action cannot be undone.`)) {
-      return;
-    }
-    
     try {
-      await deleteField(field.id);
-      hideContextMenu();
+      await deleteField(contextMenu.data.id);
+      closeDeleteFieldModal();
     } catch (err) {
       console.error('Error deleting field:', err);
     }
@@ -344,11 +359,31 @@ export default function BaseDetailPage() {
       ];
     }
     
+    if (contextMenu.type === 'record') {
+      return [
+        {
+          id: "delete_record",
+          label: "Delete Record",
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          ),
+          onClick: () => {
+            if (contextMenu.data) {
+              deleteRecord(contextMenu.data.id);
+              hideContextMenu();
+            }
+          },
+        },
+      ];
+    }
+    
     // Default base context menu options
     return base ? [
       {
         id: "rename",
-        label: "Rename",
+        label: "Rename Base",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -358,13 +393,13 @@ export default function BaseDetailPage() {
       },
       {
         id: "delete",
-        label: "Delete",
+        label: "Delete Base",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         ),
-        onClick: handleDeleteBase,
+        onClick: handleDeleteBaseClick,
         separator: true,
       },
     ] : [];
@@ -446,52 +481,9 @@ export default function BaseDetailPage() {
         )}
 
         {/* Data View */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0">
           {topTab === 'data' && selectedTableId && (
-            <>
-              {/* Master List Toggle Button */}
-              {(() => {
-                const selectedTable = tables.find(t => t.id === selectedTableId);
-                const hasMasterList = tables.some(t => t.is_master_list);
-                const isCurrentTableMaster = selectedTable?.is_master_list;
-                
-                // Only show the button if there's no master list in the base
-                if (!hasMasterList) {
-                  return (
-                    <div className="px-6 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleMasterList(selectedTableId)}
-                        className="flex items-center gap-2 px-3 py-1 text-sm text-yellow-700 hover:bg-yellow-100 rounded-lg transition-colors"
-                        title="Make this table a master list"
-                      >
-                        <Crown size={14} />
-                        <span>Make Master List</span>
-                      </button>
-                    </div>
-                  );
-                }
-                
-                // If there is a master list, show the indicator for the current master list table
-                if (isCurrentTableMaster) {
-                  return (
-                    <div className="px-6 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMasterList(selectedTableId)}
-                        className="flex items-center gap-2 px-3 py-1 text-sm bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded-lg transition-colors"
-                        title="Remove master list status"
-                      >
-                        <Crown size={14} />
-                        <span>Master List</span>
-                      </button>
-                    </div>
-                  );
-                }
-                
-                // If there's a master list but this isn't the master list table, don't show anything
-                return null;
-              })()}
+            <div className="flex-1 flex flex-col min-h-0">
               
               {viewMode === 'grid' ? (
                 <GridView
@@ -505,6 +497,7 @@ export default function BaseDetailPage() {
                   onSort={toggleSort}
                   onUpdateCell={updateCell}
                   onDeleteRow={deleteRecord}
+                  onBulkDelete={bulkDeleteRecords}
                   onAddRow={handleAddRow}
                   onAddField={handleAddField}
                   onFieldContextMenu={handleFieldContextMenu}
@@ -520,7 +513,7 @@ export default function BaseDetailPage() {
                   savingCell={savingCell}
                 />
               )}
-            </>
+            </div>
           )}
 
           {topTab === 'automations' && (
@@ -532,6 +525,12 @@ export default function BaseDetailPage() {
               onUpdateAutomation={updateAutomation}
               onDeleteAutomation={deleteAutomation}
               onToggleAutomation={toggleAutomation}
+              onFieldCreated={async (tableId: string) => {
+                // Refresh all fields to ensure the dropdown is updated
+                console.log('🔄 Refreshing all fields after new field creation for table:', tableId);
+                await loadAllFields();
+                console.log('✅ Fields refreshed successfully');
+              }}
             />
           )}
 
@@ -619,6 +618,22 @@ export default function BaseDetailPage() {
         onClose={closeDeleteTableModal}
         onDeleteTable={handleDeleteTableConfirm}
         tableName={tables.find(t => t.id === contextMenu?.tableId)?.name || ""}
+      />
+
+      {/* Delete Base Modal */}
+      <DeleteBaseModal
+        isOpen={isDeleteBaseModalOpen}
+        onClose={closeDeleteBaseModal}
+        onDeleteBase={handleDeleteBaseConfirm}
+        baseName={base?.name || ""}
+      />
+
+      {/* Delete Field Modal */}
+      <DeleteFieldModal
+        isOpen={isDeleteFieldModalOpen}
+        onClose={closeDeleteFieldModal}
+        onDeleteField={handleDeleteFieldConfirm}
+        field={contextMenu?.data || null}
       />
     </div>
   );

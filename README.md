@@ -41,7 +41,7 @@ create table if not exists public.fields (
   id uuid primary key default uuid_generate_v4(),
   table_id uuid not null references public.tables(id) on delete cascade,
   name text not null,
-  type text not null check (type in ('text','number','date','email','checkbox','single_select','multi_select','link')), 
+  type text not null check (type in ('text','number','date','datetime','email','phone','checkbox','single_select','multi_select','link')), 
   order_index integer not null default 0,
   options jsonb not null default '{}'::jsonb,
   created_at timestamp with time zone default now()

@@ -120,3 +120,49 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom scrollbar styles for better visibility */
+@layer utilities {
+  /* Webkit browsers (Chrome, Safari, Edge) */
+  .overflow-x-auto::-webkit-scrollbar,
+  .overflow-y-auto::-webkit-scrollbar,
+  .overflow-auto::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-track,
+  .overflow-y-auto::-webkit-scrollbar-track,
+  .overflow-auto::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb,
+  .overflow-y-auto::-webkit-scrollbar-thumb,
+  .overflow-auto::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 10px;
+    border: 2px solid #f1f1f1;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-corner,
+  .overflow-y-auto::-webkit-scrollbar-corner,
+  .overflow-auto::-webkit-scrollbar-corner {
+    background: #f1f1f1;
+  }
+
+  /* Firefox */
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-auto {
+    scrollbar-width: thin;
+    scrollbar-color: #c1c1c1 #f1f1f1;
+  }
+}

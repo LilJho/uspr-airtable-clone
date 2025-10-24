@@ -44,15 +44,52 @@ export function ContextMenu({ options, position, onClose, isVisible }: ContextMe
     };
   }, [isVisible, onClose]);
 
+  // Calculate optimal position to prevent overflow
+  const getOptimalPosition = () => {
+    if (!menuRef.current) return { left: position.x, top: position.y };
+    
+    const menuWidth = 200; // min-w-[200px]
+    const menuHeight = options.length * 40 + 16; // Approximate height
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    let left = position.x;
+    let top = position.y;
+    
+    // Adjust horizontal position if menu would overflow right edge
+    if (left + menuWidth > viewportWidth - 10) {
+      left = position.x - menuWidth;
+    }
+    
+    // Ensure menu doesn't go off the left edge
+    if (left < 10) {
+      left = 10;
+    }
+    
+    // Adjust vertical position if menu would overflow bottom edge
+    if (top + menuHeight > viewportHeight - 10) {
+      top = position.y - menuHeight;
+    }
+    
+    // Ensure menu doesn't go off the top edge
+    if (top < 10) {
+      top = 10;
+    }
+    
+    return { left, top };
+  };
+
   if (!isVisible) return null;
+
+  const optimalPosition = getOptimalPosition();
 
   return (
     <div
       ref={menuRef}
       className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-2 min-w-[200px] z-50"
       style={{
-        left: position.x,
-        top: position.y,
+        left: optimalPosition.left,
+        top: optimalPosition.top,
       }}
     >
       {options.map((option, index) => (
@@ -104,9 +141,29 @@ export function useContextMenu() {
     event.preventDefault();
     event.stopPropagation();
     
+    // For field context menus, position relative to the button that was clicked
+    let x = event.clientX;
+    let y = event.clientY;
+    
+    if (type === 'field') {
+      const target = event.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+      
+      // Position the menu to the left of the button if it's near the right edge
+      const viewportWidth = window.innerWidth;
+      if (rect.right + 200 > viewportWidth - 20) {
+        x = rect.left - 200;
+      } else {
+        x = rect.right;
+      }
+      
+      // Position below the button
+      y = rect.bottom + 5;
+    }
+    
     setContextMenu({
       isVisible: true,
-      position: { x: event.clientX, y: event.clientY },
+      position: { x, y },
       type,
       data,
     });

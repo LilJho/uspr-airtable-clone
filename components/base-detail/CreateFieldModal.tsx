@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Type, Hash, Calendar, Mail, CheckSquare, Link, List, CheckCircle, Plus, Edit2, Trash2, GripVertical } from "lucide-react";
+import { X, Type, Hash, Calendar, Clock, Mail, Phone, CheckSquare, Link, List, CheckCircle, Plus, Edit2, Trash2, GripVertical } from "lucide-react";
 import type { FieldType } from "@/lib/types/base-detail";
 
 interface OptionItem {
@@ -35,14 +35,26 @@ const fieldTypes: Array<{
   {
     type: 'date',
     label: 'Date',
-    description: 'Date and time values',
+    description: 'Date values',
     icon: <Calendar size={20} className="text-gray-600" />
+  },
+  {
+    type: 'datetime',
+    label: 'Date Time',
+    description: 'Date and time values',
+    icon: <Clock size={20} className="text-gray-600" />
   },
   {
     type: 'email',
     label: 'Email',
     description: 'Email addresses',
     icon: <Mail size={20} className="text-gray-600" />
+  },
+  {
+    type: 'phone',
+    label: 'Phone',
+    description: 'Phone numbers',
+    icon: <Phone size={20} className="text-gray-600" />
   },
   {
     type: 'single_select',
@@ -95,7 +107,7 @@ export const CreateFieldModal = ({ isOpen, onClose, onCreateField }: CreateField
     if (!fieldName.trim()) return;
     
     // Validate that selectedType is a valid FieldType
-    const validTypes: FieldType[] = ['text', 'number', 'date', 'email', 'single_select', 'multi_select', 'checkbox', 'link'];
+    const validTypes: FieldType[] = ['text', 'number', 'date', 'datetime', 'email', 'phone', 'single_select', 'multi_select', 'checkbox', 'link'];
     if (!validTypes.includes(selectedType)) {
       console.error('Invalid field type selected:', selectedType);
       return;

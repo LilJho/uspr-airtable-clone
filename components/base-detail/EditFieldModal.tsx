@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Type, Hash, Calendar, Mail, CheckSquare, Link, List, CheckCircle, Plus, Edit2, Trash2, GripVertical } from "lucide-react";
+import { X, Type, Hash, Calendar, Clock, Mail, Phone, CheckSquare, Link, List, CheckCircle, Plus, Edit2, Trash2, GripVertical } from "lucide-react";
 import type { FieldType, FieldRow } from "@/lib/types/base-detail";
 
 interface OptionItem {
@@ -36,14 +36,26 @@ const fieldTypes: Array<{
   {
     type: 'date',
     label: 'Date',
-    description: 'Date and time values',
+    description: 'Date values',
     icon: <Calendar size={20} className="text-gray-600" />
+  },
+  {
+    type: 'datetime',
+    label: 'Date Time',
+    description: 'Date and time values',
+    icon: <Clock size={20} className="text-gray-600" />
   },
   {
     type: 'email',
     label: 'Email',
     description: 'Email addresses',
     icon: <Mail size={20} className="text-gray-600" />
+  },
+  {
+    type: 'phone',
+    label: 'Phone',
+    description: 'Phone numbers',
+    icon: <Phone size={20} className="text-gray-600" />
   },
   {
     type: 'single_select',
@@ -72,14 +84,14 @@ const fieldTypes: Array<{
 ];
 
 const predefinedColors = [
-  { name: 'Blue', value: '#3B82F6', bg: 'bg-blue-100', text: 'text-blue-800' },
-  { name: 'Green', value: '#10B981', bg: 'bg-green-100', text: 'text-green-800' },
-  { name: 'Yellow', value: '#F59E0B', bg: 'bg-yellow-100', text: 'text-yellow-800' },
-  { name: 'Red', value: '#EF4444', bg: 'bg-red-100', text: 'text-red-800' },
-  { name: 'Purple', value: '#8B5CF6', bg: 'bg-purple-100', text: 'text-purple-800' },
-  { name: 'Pink', value: '#EC4899', bg: 'bg-pink-100', text: 'text-pink-800' },
-  { name: 'Indigo', value: '#6366F1', bg: 'bg-indigo-100', text: 'text-indigo-800' },
-  { name: 'Gray', value: '#6B7280', bg: 'bg-gray-100', text: 'text-gray-800' },
+  { name: 'Dark Blue', value: '#1E40AF', bg: 'bg-blue-100', text: 'text-blue-800' },
+  { name: 'Dark Green', value: '#065F46', bg: 'bg-green-100', text: 'text-green-800' },
+  { name: 'Dark Orange', value: '#C2410C', bg: 'bg-orange-100', text: 'text-orange-800' },
+  { name: 'Dark Red', value: '#B91C1C', bg: 'bg-red-100', text: 'text-red-800' },
+  { name: 'Dark Purple', value: '#5B21B6', bg: 'bg-purple-100', text: 'text-purple-800' },
+  { name: 'Dark Pink', value: '#BE185D', bg: 'bg-pink-100', text: 'text-pink-800' },
+  { name: 'Dark Indigo', value: '#3730A3', bg: 'bg-indigo-100', text: 'text-indigo-800' },
+  { name: 'Dark Gray', value: '#374151', bg: 'bg-gray-100', text: 'text-gray-800' },
 ];
 
 export const EditFieldModal = ({ isOpen, onClose, onEditField, field }: EditFieldModalProps) => {
@@ -101,10 +113,10 @@ export const EditFieldModal = ({ isOpen, onClose, onEditField, field }: EditFiel
         const parsedOptions: OptionItem[] = [];
         Object.entries(field.options).forEach(([id, optionData]) => {
           if (typeof optionData === 'object' && optionData !== null) {
-            const data = optionData as { label?: string; color?: string };
+            const data = optionData as { name?: string; label?: string; color?: string };
             parsedOptions.push({
               id,
-              label: data.label || '',
+              label: data.name || data.label || '',
               color: data.color || predefinedColors[0].value
             });
           }
@@ -122,7 +134,7 @@ export const EditFieldModal = ({ isOpen, onClose, onEditField, field }: EditFiel
     if (!fieldName.trim() || !field) return;
     
     // Validate that selectedType is a valid FieldType
-    const validTypes: FieldType[] = ['text', 'number', 'date', 'email', 'single_select', 'multi_select', 'checkbox', 'link'];
+    const validTypes: FieldType[] = ['text', 'number', 'date', 'datetime', 'email', 'phone', 'single_select', 'multi_select', 'checkbox', 'link'];
     if (!validTypes.includes(selectedType)) {
       console.error('Invalid field type selected:', selectedType);
       return;
@@ -138,7 +150,7 @@ export const EditFieldModal = ({ isOpen, onClose, onEditField, field }: EditFiel
       const optionsMap: Record<string, unknown> = {};
       options.forEach(option => {
         optionsMap[option.id] = {
-          label: option.label,
+          name: option.label,
           color: option.color
         };
       });
@@ -279,12 +291,6 @@ export const EditFieldModal = ({ isOpen, onClose, onEditField, field }: EditFiel
                   <div key={option.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg group">
                     <GripVertical size={16} className="text-gray-400 cursor-move" />
                     
-                    {/* Color Preview */}
-                    <div 
-                      className="w-4 h-4 rounded-full border border-gray-300"
-                      style={{ backgroundColor: option.color }}
-                    />
-                    
                     {/* Option Label */}
                     {editingOption === option.id ? (
                       <input
@@ -304,7 +310,8 @@ export const EditFieldModal = ({ isOpen, onClose, onEditField, field }: EditFiel
                       />
                     ) : (
                       <span 
-                        className="flex-1 text-sm cursor-pointer"
+                        className="flex-1 text-sm cursor-pointer px-2 py-1 rounded text-white font-medium"
+                        style={{ backgroundColor: option.color }}
                         onClick={() => setEditingOption(option.id)}
                       >
                         {option.label}

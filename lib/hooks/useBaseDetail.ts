@@ -290,6 +290,19 @@ export const useBaseDetail = (baseId: string | null) => {
     }
   }, []);
 
+  const bulkDeleteRecords = useCallback(async (recordIds: string[]) => {
+    try {
+      setError(null);
+      // Delete all records in parallel
+      await Promise.all(recordIds.map(id => BaseDetailService.deleteRecord(id)));
+      setRecords(prev => prev.filter(r => !recordIds.includes(r.id)));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete records';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
   const updateCell = useCallback(async (recordId: string, fieldId: string, value: unknown) => {
     try {
       setSavingCell({ recordId, fieldId });
@@ -408,6 +421,7 @@ export const useBaseDetail = (baseId: string | null) => {
     createRecord,
     updateRecord,
     deleteRecord,
+    bulkDeleteRecords,
     updateCell,
     
     // Refresh functions

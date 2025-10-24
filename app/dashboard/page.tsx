@@ -20,6 +20,7 @@ import { StarredView } from "@/components/dashboard/views/StarredView";
 import { CreateBaseModal } from "@/components/dashboard/modals/CreateBaseModal";
 import { CreateWorkspaceModal } from "@/components/dashboard/modals/CreateWorkspaceModal";
 import { DeleteWorkspaceModal } from "@/components/dashboard/modals/DeleteWorkspaceModal";
+import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
 
 // Utils
 import { getBaseContextMenuOptions } from "@/lib/utils/context-menu-helpers";
@@ -68,6 +69,7 @@ export default function Dashboard() {
     isCreateOpen,
     isCreateWorkspaceOpen,
     isRenameModalOpen,
+    isDeleteBaseModalOpen,
     isDeleteWorkspaceModalOpen,
     workspacesCollapsed,
     isSortOpen,
@@ -78,6 +80,7 @@ export default function Dashboard() {
     setCollectionView,
     setSortOption,
     setSelectedWorkspaceId,
+    setSelectedBase,
     setShowBanner,
     setIsCreateWorkspaceOpen,
     setWorkspacesCollapsed,
@@ -89,6 +92,8 @@ export default function Dashboard() {
     closeCreateModal,
     openRenameModal,
     closeRenameModal,
+    openDeleteBaseModal,
+    closeDeleteBaseModal,
     startEditingWorkspace,
     cancelEditingWorkspace,
     openDeleteWorkspaceModal,
@@ -109,21 +114,20 @@ export default function Dashboard() {
   const handleBaseContextMenu = useCallback((e: React.MouseEvent, base: BaseRecord) => {
     e.preventDefault();
     e.stopPropagation();
-    openRenameModal(base);
-    showContextMenu(e);
-  }, [openRenameModal, showContextMenu]);
+    setSelectedBase(base);
+    showContextMenu(e, 'base', base);
+  }, [setSelectedBase, showContextMenu]);
 
   const handleRenameBase = useCallback(async (newName: string) => {
     if (!selectedBase) return;
     await renameBase(selectedBase.id, newName);
   }, [selectedBase, renameBase]);
 
-  const handleDeleteBase = useCallback(async (base: BaseRecord) => {
-    if (!confirm(`Are you sure you want to delete "${base.name}"? This action cannot be undone.`)) {
-      return;
-    }
-    await deleteBase(base.id);
-  }, [deleteBase]);
+  const handleDeleteBase = useCallback(async () => {
+    if (!selectedBase) return;
+    await deleteBase(selectedBase.id);
+    closeDeleteBaseModal();
+  }, [selectedBase, deleteBase, closeDeleteBaseModal]);
 
   const handleCreateBase = useCallback(async (formData: { name: string; description: string; workspaceId: string }) => {
     await createBase(formData);
@@ -169,7 +173,7 @@ export default function Dashboard() {
     onRename: openRenameModal,
     onToggleStar: toggleStar,
     onDuplicate: () => alert("Duplicate functionality would be implemented here"),
-    onDelete: handleDeleteBase
+    onDelete: openDeleteBaseModal
   }) : [];
 
   // Initialize dashboard on mount
@@ -298,6 +302,14 @@ export default function Dashboard() {
             onClose={closeRenameModal}
             onRename={handleRenameBase}
             title="Rename Base"
+          />
+
+          {/* Delete Base Modal */}
+          <DeleteBaseModal
+            isOpen={isDeleteBaseModalOpen}
+            onClose={closeDeleteBaseModal}
+            onDeleteBase={handleDeleteBase}
+            baseName={selectedBase?.name || ""}
           />
         </section>
       </div>

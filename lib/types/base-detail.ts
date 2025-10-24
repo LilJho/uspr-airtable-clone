@@ -18,7 +18,7 @@ export type TableRow = {
   is_master_list: boolean;
 };
 
-export type FieldType = 'text' | 'number' | 'date' | 'email' | 'single_select' | 'multi_select' | 'checkbox' | 'link';
+export type FieldType = 'text' | 'number' | 'date' | 'datetime' | 'email' | 'phone' | 'single_select' | 'multi_select' | 'checkbox' | 'link';
 
 export type FieldRow = {
   id: string;
@@ -41,8 +41,8 @@ export type AutomationTrigger = {
   table_id: string;
   field_id?: string;
   condition?: {
-    operator: 'equals' | 'not_equals' | 'contains';
-    value: string;
+    operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal';
+    value: string | number;
   };
 };
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, Plus, MoreVertical, Zap, Share2, Rocket, Crown, Edit, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronDown, Plus, MoreVertical, Zap, Share2, Rocket, Crown, Edit, Trash2, ArrowLeft } from "lucide-react";
 import type { BaseRow, TableRow, TopTab } from "@/lib/types/base-detail";
 
 interface TopNavigationProps {
@@ -29,6 +30,7 @@ export const TopNavigation = ({
   onRenameTable,
   onDeleteTable
 }: TopNavigationProps) => {
+  const router = useRouter();
   const [isTableDropdownOpen, setIsTableDropdownOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     tableId: string;
@@ -62,6 +64,16 @@ export const TopNavigation = ({
       {/* Top bar */}
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-4">
+          {/* Back button */}
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Back to dashboard"
+          >
+            <ArrowLeft size={20} className="text-gray-600" />
+          </button>
+          
           {/* Logo and Base name */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -75,7 +87,6 @@ export const TopNavigation = ({
               >
                 {base?.name || 'Customer Data Management'}
               </button>
-              <ChevronDown size={16} className="text-gray-400" />
             </div>
           </div>
 

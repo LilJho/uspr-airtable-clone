@@ -13,6 +13,7 @@ export const useDashboardState = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [isDeleteBaseModalOpen, setIsDeleteBaseModalOpen] = useState(false);
   const [isDeleteWorkspaceModalOpen, setIsDeleteWorkspaceModalOpen] = useState(false);
   
   // UI states
@@ -55,6 +56,16 @@ export const useDashboardState = () => {
     setSelectedBase(null);
   }, []);
 
+  const openDeleteBaseModal = useCallback((base: BaseRecord) => {
+    setSelectedBase(base);
+    setIsDeleteBaseModalOpen(true);
+  }, []);
+
+  const closeDeleteBaseModal = useCallback(() => {
+    setIsDeleteBaseModalOpen(false);
+    setSelectedBase(null);
+  }, []);
+
   const startEditingWorkspace = useCallback((workspaceId: string, currentName: string) => {
     setEditingWorkspaceId(workspaceId);
     setEditingWorkspaceName(currentName);
@@ -88,6 +99,7 @@ export const useDashboardState = () => {
     isCreateOpen,
     isCreateWorkspaceOpen,
     isRenameModalOpen,
+    isDeleteBaseModalOpen,
     isDeleteWorkspaceModalOpen,
     
     // UI states
@@ -109,6 +121,7 @@ export const useDashboardState = () => {
     setIsCreateOpen,
     setIsCreateWorkspaceOpen,
     setIsRenameModalOpen,
+    setIsDeleteBaseModalOpen,
     setIsDeleteWorkspaceModalOpen,
     setWorkspacesCollapsed,
     setIsSortOpen,
@@ -124,6 +137,8 @@ export const useDashboardState = () => {
     closeCreateModal,
     openRenameModal,
     closeRenameModal,
+    openDeleteBaseModal,
+    closeDeleteBaseModal,
     startEditingWorkspace,
     cancelEditingWorkspace,
     openDeleteWorkspaceModal,
