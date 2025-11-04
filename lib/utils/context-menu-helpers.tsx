@@ -51,7 +51,6 @@ export const getBaseContextMenuOptions = (
       </svg>
     ),
     onClick: () => actions.onDuplicate(base),
-    disabled: true,
   },
   {
     id: "delete",

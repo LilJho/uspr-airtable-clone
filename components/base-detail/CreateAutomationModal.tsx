@@ -6,6 +6,7 @@ import { BaseDetailService } from "@/lib/services/base-detail-service";
 interface CreateAutomationModalProps {
   tables: TableRow[];
   fields: FieldRow[];
+  activeTableId?: string;
   automation?: Automation;
   onClose: () => void;
   onSave: (automation: Omit<Automation, 'id' | 'created_at'>) => void;
@@ -15,6 +16,7 @@ interface CreateAutomationModalProps {
 export const CreateAutomationModal = ({
   tables,
   fields,
+  activeTableId,
   automation,
   onClose,
   onSave,
@@ -22,11 +24,11 @@ export const CreateAutomationModal = ({
 }: CreateAutomationModalProps) => {
   const [formData, setFormData] = useState({
     name: automation?.name || '',
-    table_id: automation?.table_id || '',
+    table_id: automation?.table_id || activeTableId || '',
     enabled: automation?.enabled ?? true,
     trigger: {
       type: automation?.trigger.type || 'field_change' as const,
-      table_id: automation?.trigger.table_id || '',
+      table_id: automation?.trigger.table_id || activeTableId || '',
       field_id: automation?.trigger.field_id || '',
       condition: automation?.trigger.condition || {
         operator: 'equals' as const,
@@ -71,6 +73,20 @@ export const CreateAutomationModal = ({
       }));
     }
   }, [formData.action.type]);
+
+  // Reset trigger field when source table changes
+  useEffect(() => {
+    if (formData.table_id && formData.trigger.field_id) {
+      const sourceFields = fields.filter(f => f.table_id === formData.table_id);
+      const fieldExists = sourceFields.find(f => f.id === formData.trigger.field_id);
+      if (!fieldExists) {
+        setFormData(prev => ({
+          ...prev,
+          trigger: { ...prev.trigger, field_id: '' }
+        }));
+      }
+    }
+  }, [formData.table_id, fields]);
 
   const sourceFields = fields.filter(f => f.table_id === formData.table_id);
   const targetFields = fields.filter(f => f.table_id === formData.action.target_table_id);
@@ -341,15 +357,21 @@ export const CreateAutomationModal = ({
               <select
                 value={formData.table_id}
                 onChange={(e) => setFormData(prev => ({ ...prev, table_id: e.target.value }))}
+                disabled={!!activeTableId && !automation}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   errors.table_id ? 'border-red-500' : 'border-gray-300'
-                }`}
+                } ${activeTableId && !automation ? 'bg-gray-50 text-gray-600' : ''}`}
               >
                 <option value="">Select source table</option>
                 {tables.map(table => (
                   <option key={table.id} value={table.id}>{table.name}</option>
                 ))}
               </select>
+              {activeTableId && !automation && (
+                <p className="text-sm text-blue-600 mt-1">
+                  Automatically assigned to the active table
+                </p>
+              )}
               {errors.table_id && <p className="text-red-500 text-sm mt-1">{errors.table_id}</p>}
             </div>
           </div>
@@ -398,11 +420,18 @@ export const CreateAutomationModal = ({
                       }`}
                     >
                       <option value="">Select field</option>
-                      {sourceFields.map(field => (
-                        <option key={field.id} value={field.id}>{field.name}</option>
-                      ))}
+                      {sourceFields.length === 0 ? (
+                        <option value="" disabled>No fields available for selected table</option>
+                      ) : (
+                        sourceFields.map(field => (
+                          <option key={field.id} value={field.id}>{field.name}</option>
+                        ))
+                      )}
                     </select>
                     {errors.trigger_field && <p className="text-red-500 text-sm mt-1">{errors.trigger_field}</p>}
+                    {sourceFields.length === 0 && formData.table_id && (
+                      <p className="text-yellow-600 text-sm mt-1">No fields found for the selected table</p>
+                    )}
                   </div>
 
                   {/* Condition Configuration */}

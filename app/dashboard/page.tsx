@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { RenameModal } from "@/components/ui/rename-modal";
 
@@ -167,12 +168,47 @@ export default function Dashboard() {
     loadStarredBases();
   }, [switchToStarredView, loadStarredBases]);
 
+  // Handle duplicate base
+  const handleDuplicateBase = useCallback(async (base: BaseRecord) => {
+    const toastId = toast.loading(`Duplicating "${base.name}"...`, {
+      description: 'This may take a few moments'
+    });
+    
+    try {
+      const { BaseService } = await import("@/lib/services/base-service");
+      const newBaseId = await BaseService.duplicateBase(base.id);
+      
+      // Reload bases to show the new duplicate
+      await loadRecentBases();
+      if (activeView === 'workspace' && selectedWorkspaceId) {
+        await loadWorkspaceBases(selectedWorkspaceId);
+      }
+      await loadStarredBases();
+      
+      // Update toast to success
+      toast.success(`Base duplicated successfully!`, {
+        id: toastId,
+        description: `"${base.name} (Copy)" has been created`
+      });
+      
+      // Navigate to the new base
+      router.push(`/bases/${newBaseId}`);
+      hideContextMenu();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to duplicate base';
+      toast.error('Failed to duplicate base', {
+        id: toastId,
+        description: message
+      });
+    }
+  }, [activeView, selectedWorkspaceId, loadRecentBases, loadWorkspaceBases, loadStarredBases, router, hideContextMenu]);
+
   // Context menu options
   const contextMenuOptions = selectedBase ? getBaseContextMenuOptions(selectedBase, {
     onOpen: (baseId: string) => router.push(`/bases/${baseId}`),
     onRename: openRenameModal,
     onToggleStar: toggleStar,
-    onDuplicate: () => alert("Duplicate functionality would be implemented here"),
+    onDuplicate: handleDuplicateBase,
     onDelete: openDeleteBaseModal
   }) : [];
 

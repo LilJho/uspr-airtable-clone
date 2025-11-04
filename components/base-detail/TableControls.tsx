@@ -27,6 +27,7 @@ interface TableControlsProps {
   onCreateTable: () => void;
   onRenameTable: (tableId: string) => void;
   onDeleteTable: (tableId: string) => void;
+  onReorderTables: (reorderedTableIds: string[]) => void;
   onHideFields: () => void;
   onFilter: () => void;
   onGroup: () => void;
@@ -44,6 +45,7 @@ export const TableControls = ({
   onCreateTable,
   onRenameTable,
   onDeleteTable,
+  onReorderTables,
   onHideFields,
   onFilter,
   onGroup,
@@ -56,6 +58,12 @@ export const TableControls = ({
     x: number;
     y: number;
   } | null>(null);
+
+  const [draggedTableId, setDraggedTableId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Sort tables by order_index to ensure consistent display order
+  const sortedTables = [...tables].sort((a, b) => a.order_index - b.order_index);
 
   const handleTableContextMenu = (e: React.MouseEvent, tableId: string) => {
     e.preventDefault();
@@ -71,22 +79,96 @@ export const TableControls = ({
     setContextMenu(null);
   };
 
+  const handleDragStart = (e: React.DragEvent, tableId: string) => {
+    setDraggedTableId(tableId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", tableId);
+    // Make the drag image semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "0.5";
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggedTableId(null);
+    setDragOverIndex(null);
+    // Reset opacity for all draggable elements
+    const target = e.currentTarget as HTMLElement;
+    if (target) {
+      target.style.opacity = "1";
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverIndex(null);
+
+    if (!draggedTableId) return;
+
+    const draggedIndex = sortedTables.findIndex(t => t.id === draggedTableId);
+    if (draggedIndex === -1 || draggedIndex === dropIndex) {
+      setDraggedTableId(null);
+      return;
+    }
+
+    // Create new array with reordered tables
+    const newTables = [...sortedTables];
+    const [removed] = newTables.splice(draggedIndex, 1);
+    newTables.splice(dropIndex, 0, removed);
+
+    // Extract just the IDs in the new order
+    const reorderedIds = newTables.map(t => t.id);
+    
+    // Call the callback to update order
+    onReorderTables(reorderedIds);
+    
+    setDraggedTableId(null);
+  };
+
   return (
     <div className="bg-white border-b border-gray-200">
       {/* Table Tabs */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200">
         <div className="flex items-center gap-2 overflow-x-auto">
-          {tables.map((table) => (
-            <div key={table.id} className="flex items-center gap-1 group relative">
+          {sortedTables.map((table, index) => (
+            <div 
+              key={table.id} 
+              className="flex items-center gap-1 group relative"
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
+            >
+              <div 
+                className={`absolute left-0 w-1 h-8 bg-blue-500 rounded transition-opacity z-10 ${
+                  dragOverIndex === index ? 'opacity-100' : 'opacity-0'
+                }`}
+                style={{ transform: 'translateX(-8px)' }}
+              />
               <button
                 type="button"
+                draggable
+                onDragStart={(e) => handleDragStart(e, table.id)}
+                onDragEnd={handleDragEnd}
                 onClick={() => onTableSelect(table.id)}
                 onContextMenu={(e) => handleTableContextMenu(e, table.id)}
                 className={`flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   selectedTableId === table.id
                     ? 'bg-blue-100 text-blue-700'
                     : 'text-gray-600 hover:bg-gray-100'
-                }`}
+                } ${draggedTableId === table.id ? 'opacity-50' : ''}`}
+                style={{ cursor: 'grab' }}
               >
                 {table.name}
                 {selectedTableId === table.id && (
@@ -99,8 +181,10 @@ export const TableControls = ({
                   e.stopPropagation();
                   handleTableContextMenu(e, table.id);
                 }}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all"
                 title="Table options"
+                style={{ cursor: 'pointer' }}
               >
                 <MoreVertical size={12} />
               </button>

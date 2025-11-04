@@ -80,7 +80,7 @@ export const KanbanView = ({
   const groupedRecords = useMemo(() => {
     const groups: Record<string, RecordRow[]> = {};
     
-    // Initialize all stack options as empty groups
+    // Initialize all stack options as empty groups (using labels, not keys)
     stackOptions.forEach(option => {
       groups[option.label] = [];
     });
@@ -92,11 +92,14 @@ export const KanbanView = ({
     records.forEach(record => {
       const stackValue = stackField ? record.values?.[stackField.id] : null;
       
-      // Find matching option by key or label
+      // Find matching option - prioritize finding by key (since values are often stored as keys)
       const matchingOption = stackOptions.find(option => 
-        option.key === stackValue || option.label === stackValue
+        option.key === stackValue
+      ) || stackOptions.find(option => 
+        option.label === stackValue
       );
       
+      // Always use the label for the group name, never the key
       const group = matchingOption ? matchingOption.label : 'Uncategorized';
       groups[group].push(record);
     });
@@ -111,19 +114,29 @@ export const KanbanView = ({
         }
       });
       
-      // Create groups for unique values
+      // Create groups for unique values - try to find labels if they exist as options elsewhere
       uniqueValues.forEach(value => {
-        if (!groups[value]) {
-          groups[value] = [];
+        // Try to find if this value matches an option key, use label if found
+        const matchingOption = stackOptions.find(option => option.key === value);
+        const displayName = matchingOption ? matchingOption.label : value;
+        if (!groups[displayName]) {
+          groups[displayName] = [];
         }
       });
       
-      // Re-group records
+      // Re-group records using display names
       records.forEach(record => {
         const stackValue = stackField ? record.values?.[stackField.id] : null;
-        const group = (stackValue && typeof stackValue === 'string') ? stackValue : 'Uncategorized';
-        if (groups[group]) {
-          groups[group].push(record);
+        if (stackValue && typeof stackValue === 'string') {
+          const matchingOption = stackOptions.find(option => option.key === stackValue);
+          const displayName = matchingOption ? matchingOption.label : stackValue;
+          if (groups[displayName]) {
+            groups[displayName].push(record);
+          } else {
+            groups['Uncategorized'].push(record);
+          }
+        } else {
+          groups['Uncategorized'].push(record);
         }
       });
     }
@@ -273,9 +286,9 @@ export const KanbanView = ({
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, value)}
               >
-                {valueRecords.map((record) => (
+                {valueRecords.map((record, index) => (
                   <div
-                    key={record.id}
+                    key={`${value}-${record.id}-${index}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, record.id)}
                     onDragEnd={handleDragEnd}

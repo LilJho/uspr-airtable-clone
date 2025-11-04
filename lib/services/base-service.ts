@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
 import type { BaseRecord, CreateBaseFormData } from '../types/dashboard';
+import { BaseDetailService } from './base-detail-service';
 
 export class BaseService {
   static async getRecentBases(limit = 12): Promise<BaseRecord[]> {
@@ -149,5 +150,174 @@ export class BaseService {
       .eq("id", baseId);
 
     if (error) throw error;
+  }
+
+  static async duplicateBase(baseId: string): Promise<string> {
+    // 1. Get the original base
+    const originalBase = await BaseDetailService.getBase(baseId);
+    if (!originalBase) {
+      throw new Error('Base not found');
+    }
+
+    // Get workspace_id from the original base
+    const { data: baseData, error: baseDataError } = await supabase
+      .from("bases")
+      .select("workspace_id")
+      .eq("id", baseId)
+      .single();
+
+    if (baseDataError || !baseData) {
+      throw new Error('Failed to get base workspace');
+    }
+
+    // 2. Create new base with "(Copy)" suffix
+    const newBaseName = `${originalBase.name} (Copy)`;
+    const { data: newBaseData, error: newBaseError } = await supabase
+      .from("bases")
+      .insert({
+        name: newBaseName,
+        description: originalBase.description,
+        workspace_id: baseData.workspace_id
+      })
+      .select("id")
+      .single();
+
+    if (newBaseError || !newBaseData) {
+      throw new Error(newBaseError?.message || 'Failed to create duplicated base');
+    }
+
+    const newBaseId = newBaseData.id as string;
+
+    // 3. Get all tables from the original base
+    const originalTables = await BaseDetailService.getTables(baseId);
+
+    // Mapping: old table_id -> new table_id
+    const tableIdMapping = new Map<string, string>();
+
+    // 4. Create new tables (maintaining order_index and is_master_list)
+    for (const originalTable of originalTables) {
+      const { data: newTableData, error: tableError } = await supabase
+        .from("tables")
+        .insert({
+          base_id: newBaseId,
+          name: originalTable.name,
+          order_index: originalTable.order_index,
+          is_master_list: originalTable.is_master_list
+        })
+        .select("id")
+        .single();
+
+      if (tableError || !newTableData) {
+        throw new Error(tableError?.message || `Failed to create table: ${originalTable.name}`);
+      }
+
+      tableIdMapping.set(originalTable.id, newTableData.id as string);
+    }
+
+    // Mapping: old field_id -> new field_id (scoped per table)
+    const fieldIdMapping = new Map<string, string>();
+
+    // 5. For each table, copy all fields
+    for (const originalTable of originalTables) {
+      const newTableId = tableIdMapping.get(originalTable.id);
+      if (!newTableId) continue;
+
+      // Get all fields from the original table
+      const originalFields = await BaseDetailService.getFields(originalTable.id);
+
+      // Create new fields in the new table (maintaining order_index, type, and options)
+      for (const originalField of originalFields) {
+        const { data: newFieldData, error: fieldError } = await supabase
+          .from("fields")
+          .insert({
+            table_id: newTableId,
+            name: originalField.name,
+            type: originalField.type,
+            order_index: originalField.order_index,
+            options: originalField.options || {}
+          })
+          .select("id")
+          .single();
+
+        if (fieldError || !newFieldData) {
+          throw new Error(fieldError?.message || `Failed to create field: ${originalField.name}`);
+        }
+
+        fieldIdMapping.set(originalField.id, newFieldData.id as string);
+      }
+    }
+
+    // 6. Copy all automations
+    // Get all automations for all tables in the original base
+    const allAutomations: Array<{ automation: any; tableId: string }> = [];
+    
+    for (const originalTable of originalTables) {
+      try {
+        const automations = await BaseDetailService.getAutomations(originalTable.id);
+        for (const automation of automations) {
+          allAutomations.push({ automation, tableId: originalTable.id });
+        }
+      } catch (error) {
+        // Continue if no automations found
+        console.warn(`No automations found for table ${originalTable.id}`);
+      }
+    }
+
+    // Create new automations with updated references
+    for (const { automation, tableId } of allAutomations) {
+      const newTableId = tableIdMapping.get(tableId);
+      if (!newTableId) continue;
+
+      // Update trigger field_id if it exists
+      const newTriggerFieldId = automation.trigger?.field_id 
+        ? fieldIdMapping.get(automation.trigger.field_id) || undefined
+        : undefined;
+
+      // Update action field_mappings with new field IDs
+      const newFieldMappings = automation.action?.field_mappings?.map((mapping: any) => {
+        const newSourceFieldId = fieldIdMapping.get(mapping.source_field_id);
+        const newTargetFieldId = fieldIdMapping.get(mapping.target_field_id);
+        
+        // Only include mapping if both fields exist in the new base
+        if (newSourceFieldId && newTargetFieldId) {
+          return {
+            source_field_id: newSourceFieldId,
+            target_field_id: newTargetFieldId
+          };
+        }
+        return null;
+      }).filter((m: any) => m !== null) || [];
+
+      // Update target_table_id in action
+      const newTargetTableId = automation.action?.target_table_id
+        ? tableIdMapping.get(automation.action.target_table_id) || automation.action.target_table_id
+        : undefined;
+
+      // Create the new automation
+      const newAutomation: Omit<any, 'id' | 'created_at'> = {
+        name: automation.name,
+        table_id: newTableId,
+        enabled: automation.enabled || false,
+        trigger: {
+          ...automation.trigger,
+          table_id: newTableId,
+          field_id: newTriggerFieldId
+        },
+        action: {
+          ...automation.action,
+          target_table_id: newTargetTableId,
+          field_mappings: newFieldMappings
+        }
+      };
+
+      try {
+        await BaseDetailService.createAutomation(newAutomation);
+      } catch (error) {
+        console.warn(`Failed to create automation: ${automation.name}`, error);
+        // Continue with other automations even if one fails
+      }
+    }
+
+    return newBaseId;
   }
 }

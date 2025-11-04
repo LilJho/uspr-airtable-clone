@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -80,8 +81,33 @@ export default function BasesPage() {
   };
 
   const handleDuplicateBase = async (base: BaseSummary): Promise<void> => {
-    // For now, just show a message - full implementation would require duplicating all tables and data
-    alert(`Duplicate functionality for "${base.name}" would be implemented here`);
+    const toastId = toast.loading(`Duplicating "${base.name}"...`, {
+      description: 'This may take a few moments'
+    });
+    
+    try {
+      const { BaseService } = await import("@/lib/services/base-service");
+      const newBaseId = await BaseService.duplicateBase(base.id);
+      
+      // Reload bases to show the new duplicate
+      await loadAllBases();
+      
+      // Update toast to success
+      toast.success(`Base duplicated successfully!`, {
+        id: toastId,
+        description: `"${base.name} (Copy)" has been created`
+      });
+      
+      // Navigate to the new base
+      router.push(`/bases/${newBaseId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to duplicate base';
+      setErrorMessage(message);
+      toast.error('Failed to duplicate base', {
+        id: toastId,
+        description: message
+      });
+    }
   };
 
   const handleToggleStar = async (base: BaseSummary): Promise<void> => {
@@ -165,7 +191,6 @@ export default function BasesPage() {
         </svg>
       ),
       onClick: () => handleDuplicateBase(base),
-      disabled: true,
     },
     {
       id: "move",

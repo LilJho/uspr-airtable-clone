@@ -489,25 +489,97 @@ export class BaseDetailService {
     // Collect unique values for single_select fields
     const singleSelectOptions = new Map<string, Set<string>>();
     
+    // First pass: analyze all columns to detect select fields
+    const columnAnalysis = new Map<string, { uniqueValues: Set<string>, totalRows: number }>();
+    
     for (const [csvColumn, mapping] of Object.entries(fieldMappings)) {
       if (typeof mapping === 'object' && mapping.type === 'create') {
-        if (mapping.fieldType === 'single_select') {
-          // Find the column index for this CSV column
-          const columnIndex = headers.findIndex(h => h === csvColumn);
-          if (columnIndex !== -1) {
-            // Collect unique values from all data rows for this column
-            const uniqueValues = new Set<string>();
-            for (const row of dataRows) {
-              const parsedRow = parseCsvRow(row);
-              if (parsedRow[columnIndex]) {
-                const value = parsedRow[columnIndex].trim();
-                if (value && value !== '(empty)') {
-                  uniqueValues.add(value);
-                }
+        const columnIndex = headers.findIndex(h => h === csvColumn);
+        if (columnIndex !== -1) {
+          const uniqueValues = new Set<string>();
+          let totalRows = 0;
+          
+          // Analyze all data rows for this column
+          for (const row of dataRows) {
+            const parsedRow = parseCsvRow(row);
+            if (parsedRow[columnIndex]) {
+              let value = parsedRow[columnIndex].trim();
+              // Remove surrounding quotes if present
+              if (value.startsWith('"') && value.endsWith('"')) {
+                value = value.slice(1, -1);
+              }
+              // Unescape double quotes
+              value = value.replace(/""/g, '"');
+              
+              if (value && value !== '(empty)') {
+                uniqueValues.add(value);
+                totalRows++;
               }
             }
-            singleSelectOptions.set(csvColumn, uniqueValues);
+          }
+          
+          columnAnalysis.set(csvColumn, { uniqueValues, totalRows });
+        }
+      }
+    }
+    
+    // Second pass: determine field types and create select options
+    for (const [csvColumn, mapping] of Object.entries(fieldMappings)) {
+      if (typeof mapping === 'object' && mapping.type === 'create') {
+        const analysis = columnAnalysis.get(csvColumn);
+        
+        if (analysis) {
+          const { uniqueValues, totalRows } = analysis;
+          const uniqueCount = uniqueValues.size;
+          
+          // Smart detection for select fields
+          // Updated threshold: only detect as select if 5 or fewer unique values
+          if (mapping.fieldType === 'text' && uniqueCount >= 2 && uniqueCount <= 5 && totalRows >= 2) {
+            const valuesArray = Array.from(uniqueValues);
             
+            // Criteria for detecting select fields:
+            // 1. Limited number of unique values (2-5 values)
+            // 2. Values are not purely numeric (to avoid confusing with number fields)
+            // 3. Values don't look like emails, dates, or phone numbers
+            // 4. Values are reasonable length (not too long)
+            const isNotNumeric = valuesArray.some(v => isNaN(Number(v)) || v.trim() === '');
+            const isNotEmail = valuesArray.every(v => !v.includes('@') || !v.includes('.'));
+            const isNotDate = valuesArray.every(v => 
+              !/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(v) && 
+              !/^\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}$/.test(v)
+            );
+            const isNotPhone = valuesArray.every(v => !/^[\+]?[\d\s\-\(\)]+$/.test(v));
+            const reasonableLength = valuesArray.every(v => v.length <= 50);
+            
+            if (isNotNumeric && isNotEmail && isNotDate && isNotPhone && reasonableLength) {
+              console.log(`🎯 SELECT FIELD DETECTED: ${mapping.fieldName} with ${uniqueCount} unique values:`, valuesArray);
+              
+              // Upgrade field type to single_select
+              mapping.fieldType = 'single_select';
+              
+              // Create options object for the field
+              const options: Record<string, { name: string; color: string }> = {};
+              Array.from(uniqueValues).forEach((value, index) => {
+                const optionId = `option_${index + 1}`;
+                options[optionId] = {
+                  name: value,
+                  color: getRandomColor() // Generate a random color for each option
+                };
+              });
+              
+              fieldsToCreate.set(csvColumn, { 
+                fieldType: 'single_select', 
+                fieldName: mapping.fieldName,
+                options 
+              });
+              
+              singleSelectOptions.set(csvColumn, uniqueValues);
+              continue; // Skip the normal field creation below
+            }
+          }
+          
+          // Handle single_select fields that were already detected
+          if (mapping.fieldType === 'single_select') {
             // Create options object for the field
             const options: Record<string, { name: string; color: string }> = {};
             Array.from(uniqueValues).forEach((value, index) => {
@@ -523,6 +595,8 @@ export class BaseDetailService {
               fieldName: mapping.fieldName,
               options 
             });
+            
+            singleSelectOptions.set(csvColumn, uniqueValues);
           } else {
             fieldsToCreate.set(csvColumn, { fieldType: mapping.fieldType, fieldName: mapping.fieldName });
           }

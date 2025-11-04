@@ -214,6 +214,23 @@ export default function BaseDetailPage() {
     openDeleteTableModal();
   };
 
+  const handleReorderTables = async (reorderedTableIds: string[]) => {
+    try {
+      // Update order_index for each table based on its new position
+      const updatePromises = reorderedTableIds.map((tableId, index) => {
+        const table = tables.find(t => t.id === tableId);
+        if (table && table.order_index !== index) {
+          return updateTable(tableId, { order_index: index });
+        }
+        return Promise.resolve();
+      });
+      
+      await Promise.all(updatePromises);
+    } catch (err) {
+      console.error('Error reordering tables:', err);
+    }
+  };
+
   const handleRenameTableConfirm = async (newName: string) => {
     if (!contextMenu?.tableId) return;
     
@@ -471,6 +488,7 @@ export default function BaseDetailPage() {
             onCreateTable={openCreateTableModal}
             onRenameTable={handleRenameTable}
             onDeleteTable={handleDeleteTable}
+            onReorderTables={handleReorderTables}
             onHideFields={() => {}} // TODO: Implement
             onFilter={() => {}} // TODO: Implement
             onGroup={() => {}} // TODO: Implement
@@ -521,6 +539,7 @@ export default function BaseDetailPage() {
               automations={automations}
               tables={tables}
               fields={allFields}
+              activeTableId={selectedTableId}
               onCreateAutomation={createAutomation}
               onUpdateAutomation={updateAutomation}
               onDeleteAutomation={deleteAutomation}

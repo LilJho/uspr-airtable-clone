@@ -18,6 +18,8 @@ interface CsvColumn {
   index: number;
   header: string;
   sampleValue: string;
+  uniqueCount?: number;
+  nonEmptyCount?: number;
 }
 
 export const ImportCsvModal = ({
@@ -146,12 +148,15 @@ export const ImportCsvModal = ({
       const dataRowCount = lines.length - 1;
       setRowCount(dataRowCount);
       
-      // Parse data rows to find sample values (look through up to 5 rows to find non-empty samples)
-      const dataRows = lines.slice(1, Math.min(lines.length, 6)).map(line => parseCSVLine(line));
+      // Parse data rows to find sample values (look through up to 20 rows to find non-empty samples)
+      const dataRows = lines.slice(1, Math.min(lines.length, 21)).map(line => parseCSVLine(line));
       
       const headers = headerRow.map((header, index) => {
         // Find first non-empty value for this column
         let sampleValue = '';
+        let nonEmptyCount = 0;
+        const uniqueValues = new Set<string>();
+        
         for (const row of dataRows) {
           let value = row[index] ? row[index].trim() : '';
           // Remove surrounding quotes if present
@@ -162,8 +167,21 @@ export const ImportCsvModal = ({
           value = value.replace(/""/g, '"');
           
           if (value) {
-            sampleValue = value;
-            break;
+            uniqueValues.add(value);
+            nonEmptyCount++;
+            // Use the first non-empty value as sample, but also collect unique values
+            if (!sampleValue) {
+              sampleValue = value;
+            }
+          }
+        }
+        
+        // If we found multiple unique values, show a more informative sample
+        if (uniqueValues.size > 1) {
+          const valuesArray = Array.from(uniqueValues).slice(0, 3); // Show up to 3 different values
+          sampleValue = valuesArray.join(', ');
+          if (uniqueValues.size > 3) {
+            sampleValue += ` (+${uniqueValues.size - 3} more)`;
           }
         }
         
@@ -177,12 +195,22 @@ export const ImportCsvModal = ({
         return {
           index,
           header: cleanHeader,
-          sampleValue: sampleValue || '(empty)'
+          sampleValue: sampleValue || '(empty)',
+          uniqueCount: uniqueValues.size,
+          nonEmptyCount
         };
       });
 
       console.log('Parsed CSV columns:', headers); // Debug log
       console.log('Total rows to import:', dataRowCount); // Debug log
+      
+      // Debug logging for potential select fields
+      headers.forEach(header => {
+        if (header.uniqueCount && header.uniqueCount >= 2) {
+          const isSelectCandidate = header.uniqueCount <= 5;
+          console.log(`🔍 ${isSelectCandidate ? 'POTENTIAL SELECT FIELD' : 'TEXT FIELD (too many values)'}: ${header.header} - ${header.uniqueCount} unique values, sample: "${header.sampleValue}"`);
+        }
+      });
 
       setCsvColumns(headers);
       setStep('mapping');
@@ -315,6 +343,21 @@ export const ImportCsvModal = ({
             // Check for boolean values
             else if (['true', 'false', 'yes', 'no', '1', '0'].includes(sample)) {
               fieldType = 'checkbox';
+            }
+          }
+          
+          // Smart detection for select option fields
+          // Use the improved sample data to make better initial guesses
+          if (fieldType === 'text' && column.sampleValue && column.sampleValue !== '(empty)') {
+            // If we have multiple unique values in the sample, this might be a select field
+            // Updated threshold: only detect as select if 5 or fewer unique values
+            if (column.uniqueCount && column.uniqueCount >= 2 && column.uniqueCount <= 5) {
+              // Check if the sample contains multiple values (comma-separated)
+              if (column.sampleValue.includes(', ')) {
+                // This looks like a select field with multiple options
+                fieldType = 'single_select';
+                console.log(`🎯 POTENTIAL SELECT FIELD DETECTED: ${fieldName} with ${column.uniqueCount} unique values in sample`);
+              }
             }
           }
           
@@ -495,6 +538,8 @@ export const ImportCsvModal = ({
                     </div>
                     <div className="text-sm text-green-700">
                       {csvColumns.length} columns will be mapped to existing fields or new fields will be created with smart type detection.
+                      <br />
+                      <span className="text-blue-600 font-medium">Select fields will be automatically detected when columns contain 5 or fewer unique, repeated values.</span>
                     </div>
                   </div>
                 )}
@@ -511,13 +556,27 @@ export const ImportCsvModal = ({
                       <div className="flex items-center gap-4">
                         <div className="flex-1">
                           <div className="font-medium text-gray-900">{column.header}</div>
-                          <div className="text-sm text-gray-500">Sample: {column.sampleValue}</div>
+                          <div className="text-sm text-gray-500">
+                            Sample: {column.sampleValue}
+                            {column.uniqueCount && column.uniqueCount > 1 && (
+                              <span className="ml-2 text-blue-600 font-medium">
+                                ({column.uniqueCount} unique values)
+                              </span>
+                            )}
+                          </div>
                           {createAllFields && mapping && (
                             <div className="text-xs text-green-600 mt-1">
                               {typeof mapping === 'string' ? (
                                 <>→ Will map to existing field "{fields.find(f => f.id === mapping)?.name}"</>
                               ) : (
-                                <>→ Will create new field "{mapping.fieldName}" ({mapping.fieldType})</>
+                                <>
+                                  → Will create new field "{mapping.fieldName}" ({mapping.fieldType})
+                                  {mapping.fieldType === 'single_select' && (
+                                    <span className="ml-1 text-blue-600 font-medium">
+                                      (Select field detected)
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                           )}

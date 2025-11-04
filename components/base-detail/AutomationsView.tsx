@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Plus, Play, Pause, Edit, Trash2, Copy, Move, RefreshCw } from "lucide-react";
 import { CreateAutomationModal } from "./CreateAutomationModal";
+import { CopyAutomationModal } from "./CopyAutomationModal";
 import type { Automation, TableRow, FieldRow } from "@/lib/types/base-detail";
 
 interface AutomationsViewProps {
   automations: Automation[];
   tables: TableRow[];
   fields: FieldRow[];
+  activeTableId?: string;
   onCreateAutomation: (automation: Omit<Automation, 'id' | 'created_at'>) => void;
   onUpdateAutomation: (id: string, updates: Partial<Automation>) => void;
   onDeleteAutomation: (id: string) => void;
@@ -18,6 +20,7 @@ export const AutomationsView = ({
   automations,
   tables,
   fields,
+  activeTableId,
   onCreateAutomation,
   onUpdateAutomation,
   onDeleteAutomation,
@@ -26,6 +29,7 @@ export const AutomationsView = ({
 }: AutomationsViewProps) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
+  const [copyingAutomation, setCopyingAutomation] = useState<Automation | null>(null);
 
   const getActionIcon = (actionType: string) => {
     switch (actionType) {
@@ -171,6 +175,13 @@ export const AutomationsView = ({
                       {automation.enabled ? <Pause size={16} /> : <Play size={16} />}
                     </button>
                     <button
+                      onClick={() => setCopyingAutomation(automation)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Copy to another table"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button
                       onClick={() => setEditingAutomation(automation)}
                       className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                       title="Edit"
@@ -197,8 +208,12 @@ export const AutomationsView = ({
         <CreateAutomationModal
           tables={tables}
           fields={fields}
+          activeTableId={activeTableId}
           onClose={() => setIsCreateModalOpen(false)}
-          onSave={onCreateAutomation}
+          onSave={(automation) => {
+            onCreateAutomation(automation);
+            setIsCreateModalOpen(false);
+          }}
           onFieldCreated={onFieldCreated ? () => onFieldCreated('') : undefined}
         />
       )}
@@ -207,6 +222,7 @@ export const AutomationsView = ({
         <CreateAutomationModal
           tables={tables}
           fields={fields}
+          activeTableId={activeTableId}
           automation={editingAutomation}
           onClose={() => setEditingAutomation(null)}
           onSave={(automation) => {
@@ -214,6 +230,19 @@ export const AutomationsView = ({
             setEditingAutomation(null);
           }}
           onFieldCreated={onFieldCreated ? () => onFieldCreated('') : undefined}
+        />
+      )}
+
+      {copyingAutomation && (
+        <CopyAutomationModal
+          automation={copyingAutomation}
+          tables={tables}
+          fields={fields}
+          onClose={() => setCopyingAutomation(null)}
+          onCopy={(automation, fieldMappings) => {
+            onCreateAutomation(automation);
+            setCopyingAutomation(null);
+          }}
         />
       )}
     </div>
