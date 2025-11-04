@@ -5,7 +5,7 @@ import type { RecordRow, FieldRow } from "@/lib/types/base-detail";
 interface KanbanViewProps {
   records: RecordRow[];
   fields: FieldRow[];
-  onUpdateCell: (recordId: string, fieldId: string, value: any) => void;
+  onUpdateCell: (recordId: string, fieldId: string, value: unknown) => void;
   onDeleteRow: (recordId: string) => void;
   onAddRow: () => void;
   savingCell: {recordId: string; fieldId: string} | null;
@@ -60,10 +60,13 @@ export const KanbanView = ({
       );
       
       if (hasNewFormat) {
-        return Object.entries(options).map(([key, option]: [string, any]) => ({
-          key,
-          label: option.label
-        }));
+        return Object.entries(options).map(([key, option]) => {
+          const opt = option as { label: string; color?: string };
+          return {
+            key,
+            label: opt.label
+          };
+        });
       }
     }
     
@@ -332,7 +335,7 @@ export const KanbanView = ({
                 {/* Quick set value for existing records */}
                 {valueRecords.length === 0 && value !== 'Uncategorized' && (
                   <div className="mt-2 p-2 text-xs text-gray-400 text-center">
-                    Drag records here to set as "{value}"
+                    Drag records here to set as &quot;{value}&quot;
                   </div>
                 )}
               </div>

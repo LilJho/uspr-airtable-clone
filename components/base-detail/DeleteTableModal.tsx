@@ -74,7 +74,7 @@ export const DeleteTableModal = ({ isOpen, onClose, onDeleteTable, tableName }: 
                     This action cannot be undone
                   </h3>
                   <p className="text-sm text-red-700">
-                    Deleting <strong>"{tableName}"</strong> will permanently remove:
+                    Deleting <strong>&quot;{tableName}&quot;</strong> will permanently remove:
                   </p>
                   <ul className="mt-2 text-sm text-red-700 space-y-1">
                     <li>• All records in this table</li>

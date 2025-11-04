@@ -299,7 +299,7 @@ export const CopyAutomationModal = ({
                     Trigger Field Not Found
                   </h5>
                   <p className="text-sm text-amber-700">
-                    The original trigger field doesn't exist in the selected source table. 
+                    The original trigger field doesn&apos;t exist in the selected source table. 
                     The automation will be created with the trigger field reset. 
                     You can edit it after creation.
                   </p>

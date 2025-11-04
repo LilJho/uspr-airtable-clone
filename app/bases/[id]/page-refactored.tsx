@@ -36,8 +36,11 @@ export default function BaseDetailPage() {
     updateBase,
     deleteBase,
     createTable,
+    updateTable,
+    deleteTable,
     updateCell,
     deleteRecord,
+    bulkDeleteRecords,
     createRecord
   } = useBaseDetail(baseId);
   
@@ -103,6 +106,46 @@ export default function BaseDetailPage() {
       });
     } catch (err) {
       console.error('Error creating table:', err);
+    }
+  };
+
+  const handleToggleMasterList = async (tableId: string) => {
+    const table = tables.find(t => t.id === tableId);
+    if (!table) return;
+    
+    try {
+      await updateTable(tableId, { is_master_list: !table.is_master_list });
+    } catch (err) {
+      console.error('Error toggling master list:', err);
+    }
+  };
+
+  const handleRenameTable = async (tableId: string) => {
+    const table = tables.find(t => t.id === tableId);
+    if (!table) return;
+    
+    const newName = prompt("Enter new table name:", table.name);
+    if (!newName?.trim() || newName === table.name) return;
+    
+    try {
+      await updateTable(tableId, { name: newName.trim() });
+    } catch (err) {
+      console.error('Error renaming table:', err);
+    }
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    const table = tables.find(t => t.id === tableId);
+    if (!table) return;
+    
+    if (!confirm(`Are you sure you want to delete "${table.name}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      await deleteTable(tableId);
+    } catch (err) {
+      console.error('Error deleting table:', err);
     }
   };
 
@@ -178,6 +221,9 @@ export default function BaseDetailPage() {
         onTabChange={setTopTab}
         onBaseContextMenu={handleBaseContextMenu}
         onCreateTable={handleCreateTable}
+        onToggleMasterList={handleToggleMasterList}
+        onRenameTable={handleRenameTable}
+        onDeleteTable={handleDeleteTable}
       />
 
       {/* Main Content */}
@@ -216,12 +262,15 @@ export default function BaseDetailPage() {
                 <GridView
                   records={records}
                   fields={fields}
+                  tables={tables}
+                  selectedTableId={selectedTableId}
                   sortFieldId={sortFieldId}
                   sortDirection={sortDirection}
                   savingCell={savingCell}
                   onSort={toggleSort}
                   onUpdateCell={updateCell}
                   onDeleteRow={deleteRecord}
+                  onBulkDelete={bulkDeleteRecords}
                   onAddRow={handleAddRow}
                   onAddField={() => {}} // TODO: Implement field creation
                   onFieldContextMenu={handleFieldContextMenu}

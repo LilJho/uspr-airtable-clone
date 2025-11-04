@@ -65,7 +65,7 @@ export const DeleteFieldModal = ({ isOpen, onClose, onDeleteField, field }: Dele
         <div className="p-6">
           <div className="mb-4">
             <p className="text-gray-600 mb-4">
-              Are you sure you want to delete the field <span className="font-semibold text-gray-900">"{field.name}"</span>?
+              Are you sure you want to delete the field <span className="font-semibold text-gray-900">&quot;{field.name}&quot;</span>?
             </p>
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <div className="flex items-start gap-3">

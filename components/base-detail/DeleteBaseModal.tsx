@@ -76,7 +76,7 @@ export const DeleteBaseModal = ({ isOpen, onClose, onDeleteBase, baseName }: Del
                     This action cannot be undone
                   </h3>
                   <p className="text-sm text-red-700">
-                    Deleting <strong>"{baseName}"</strong> will permanently remove:
+                    Deleting <strong>&quot;{baseName}&quot;</strong> will permanently remove:
                   </p>
                   <ul className="mt-2 text-sm text-red-700 space-y-1">
                     <li>• All tables in this base</li>

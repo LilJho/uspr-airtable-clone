@@ -302,10 +302,12 @@ export default function BaseDetailPage() {
   };
 
   const handleDeleteFieldConfirm = async () => {
-    if (!contextMenu?.data?.id) return;
+    if (!contextMenu?.data || contextMenu.type !== 'field') return;
+    const field = contextMenu.data as FieldRow;
+    if (!field.id) return;
     
     try {
-      await deleteField(contextMenu.data.id);
+      await deleteField(field.id);
       closeDeleteFieldModal();
     } catch (err) {
       console.error('Error deleting field:', err);
@@ -356,8 +358,8 @@ export default function BaseDetailPage() {
             </svg>
           ),
           onClick: () => {
-            if (contextMenu.data) {
-              setEditingField(contextMenu.data);
+            if (contextMenu.data && contextMenu.type === 'field') {
+              setEditingField(contextMenu.data as FieldRow);
               openEditFieldModal();
               hideContextMenu();
             }
@@ -387,8 +389,9 @@ export default function BaseDetailPage() {
             </svg>
           ),
           onClick: () => {
-            if (contextMenu.data) {
-              deleteRecord(contextMenu.data.id);
+            if (contextMenu.data && contextMenu.type === 'record') {
+              const record = contextMenu.data as RecordRow;
+              deleteRecord(record.id);
               hideContextMenu();
             }
           },
@@ -539,7 +542,7 @@ export default function BaseDetailPage() {
               automations={automations}
               tables={tables}
               fields={allFields}
-              activeTableId={selectedTableId}
+              activeTableId={selectedTableId || undefined}
               onCreateAutomation={createAutomation}
               onUpdateAutomation={updateAutomation}
               onDeleteAutomation={deleteAutomation}
@@ -652,7 +655,7 @@ export default function BaseDetailPage() {
         isOpen={isDeleteFieldModalOpen}
         onClose={closeDeleteFieldModal}
         onDeleteField={handleDeleteFieldConfirm}
-        field={contextMenu?.data || null}
+        field={contextMenu?.data && contextMenu.type === 'field' ? (contextMenu.data as FieldRow) : null}
       />
     </div>
   );

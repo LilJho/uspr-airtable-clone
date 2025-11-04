@@ -22,7 +22,7 @@ export const DeleteWorkspaceModal = ({
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Delete Workspace</h3>
           <p className="mt-2 text-sm text-gray-600">
-            Are you sure you want to delete "<strong>{workspace.name}</strong>"? 
+            Are you sure you want to delete &quot;<strong>{workspace.name}</strong>&quot;? 
             This will permanently delete the workspace and all its bases. This action cannot be undone.
           </p>
         </div>

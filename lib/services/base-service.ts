@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
 import type { BaseRecord, CreateBaseFormData } from '../types/dashboard';
+import type { Automation } from '../types/base-detail';
 import { BaseDetailService } from './base-detail-service';
 
 export class BaseService {
@@ -249,7 +250,7 @@ export class BaseService {
 
     // 6. Copy all automations
     // Get all automations for all tables in the original base
-    const allAutomations: Array<{ automation: any; tableId: string }> = [];
+    const allAutomations: Array<{ automation: Automation; tableId: string }> = [];
     
     for (const originalTable of originalTables) {
       try {
@@ -274,7 +275,7 @@ export class BaseService {
         : undefined;
 
       // Update action field_mappings with new field IDs
-      const newFieldMappings = automation.action?.field_mappings?.map((mapping: any) => {
+      const newFieldMappings = automation.action?.field_mappings?.map((mapping) => {
         const newSourceFieldId = fieldIdMapping.get(mapping.source_field_id);
         const newTargetFieldId = fieldIdMapping.get(mapping.target_field_id);
         
@@ -286,15 +287,21 @@ export class BaseService {
           };
         }
         return null;
-      }).filter((m: any) => m !== null) || [];
+      }).filter((m): m is { source_field_id: string; target_field_id: string } => m !== null) || [];
 
       // Update target_table_id in action
       const newTargetTableId = automation.action?.target_table_id
         ? tableIdMapping.get(automation.action.target_table_id) || automation.action.target_table_id
         : undefined;
 
+      // Skip automation if target_table_id is missing
+      if (!newTargetTableId) {
+        console.warn(`Skipping automation ${automation.name}: target_table_id not found`);
+        continue;
+      }
+
       // Create the new automation
-      const newAutomation: Omit<any, 'id' | 'created_at'> = {
+      const newAutomation: Omit<Automation, 'id' | 'created_at'> = {
         name: automation.name,
         table_id: newTableId,
         enabled: automation.enabled || false,

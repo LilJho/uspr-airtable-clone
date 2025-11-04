@@ -8,7 +8,8 @@ import type {
   AutomationAction,
   CreateTableData,
   CreateFieldData,
-  UpdateCellData
+  UpdateCellData,
+  FieldType
 } from '../types/base-detail';
 
 // Helper function to clean and extract valid email from malformed input
@@ -479,7 +480,7 @@ export class BaseDetailService {
     const errors: string[] = [];
 
     // Get existing fields and their types
-    let fields = await this.getFields(tableId);
+    const fields = await this.getFields(tableId);
     const fieldTypeMap = new Map(fields.map(f => [f.id, f.type]));
     
     // Create new fields for mappings that specify field creation
@@ -613,7 +614,7 @@ export class BaseDetailService {
         console.log(`🔧 Creating field: ${fieldConfig.fieldName} (${fieldConfig.fieldType}) for column: ${csvColumn}`);
         const newField = await this.createField({
           name: fieldConfig.fieldName,
-          type: fieldConfig.fieldType as any,
+          type: fieldConfig.fieldType as FieldType,
           table_id: tableId,
           order_index: fields.length,
           options: fieldConfig.options
@@ -1076,7 +1077,7 @@ export class BaseDetailService {
       // For single_select fields, we need to check if the current value is an option ID
       // and if the trigger value matches the display text
       let currentValueToCheck = currentValue;
-      let triggerValueToCheck = triggerValue;
+      const triggerValueToCheck = triggerValue;
       
       // If current value looks like an option ID (starts with 'option_'), we need to resolve it
       if (String(currentValue).startsWith('option_')) {

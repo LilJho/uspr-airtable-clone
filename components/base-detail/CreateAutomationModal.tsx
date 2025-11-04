@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
-import type { Automation, TableRow, FieldRow, FieldType } from "@/lib/types/base-detail";
+import type { Automation, TableRow, FieldRow, FieldType, AutomationTrigger, AutomationAction } from "@/lib/types/base-detail";
 import { BaseDetailService } from "@/lib/services/base-detail-service";
 
 interface CreateAutomationModalProps {
@@ -245,7 +245,7 @@ export const CreateAutomationModal = ({
       
       for (const sourceField of allSourceFields) {
         // Check if a target field with the same name already exists
-        let targetField = targetFields.find(f => f.name === sourceField.name);
+        const targetField = targetFields.find(f => f.name === sourceField.name);
         
         if (!targetField) {
           // Create a new field in the target table
@@ -284,7 +284,7 @@ export const CreateAutomationModal = ({
       // Create mappings for all source fields
       for (const sourceField of allSourceFields) {
         // Find the corresponding target field (existing or newly created)
-        let targetField = targetFields.find(f => f.name === sourceField.name) || 
+        const targetField = targetFields.find(f => f.name === sourceField.name) || 
                          createdFields.find(f => f.name === sourceField.name);
         
         if (targetField) {
@@ -393,7 +393,7 @@ export const CreateAutomationModal = ({
                   value={formData.trigger.type}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    trigger: { ...prev.trigger, type: e.target.value as any }
+                    trigger: { ...prev.trigger, type: e.target.value as AutomationTrigger['type'] }
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
@@ -445,16 +445,19 @@ export const CreateAutomationModal = ({
                           </label>
                           <select
                             value={formData.trigger.condition.operator}
-                            onChange={(e) => setFormData(prev => ({ 
-                              ...prev, 
-                              trigger: { 
-                                ...prev.trigger, 
-                                condition: { 
-                                  ...prev.trigger.condition, 
-                                  operator: e.target.value as any 
+                            onChange={(e) => setFormData(prev => {
+                              const currentCondition = prev.trigger.condition ?? { operator: 'equals' as const, value: '' };
+                              return {
+                                ...prev, 
+                                trigger: { 
+                                  ...prev.trigger, 
+                                  condition: { 
+                                    ...currentCondition, 
+                                    operator: e.target.value as NonNullable<AutomationTrigger['condition']>['operator']
+                                  }
                                 }
-                              }
-                            }))}
+                              };
+                            })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="equals">Equals</option>
@@ -516,7 +519,7 @@ export const CreateAutomationModal = ({
                   value={formData.action.type}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    action: { ...prev.action, type: e.target.value as any }
+                    action: { ...prev.action, type: e.target.value as AutomationAction['type'] }
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >

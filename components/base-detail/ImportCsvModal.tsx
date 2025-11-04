@@ -567,10 +567,10 @@ export const ImportCsvModal = ({
                           {createAllFields && mapping && (
                             <div className="text-xs text-green-600 mt-1">
                               {typeof mapping === 'string' ? (
-                                <>→ Will map to existing field "{fields.find(f => f.id === mapping)?.name}"</>
+                                <>→ Will map to existing field &quot;{fields.find(f => f.id === mapping)?.name}&quot;</>
                               ) : (
                                 <>
-                                  → Will create new field "{mapping.fieldName}" ({mapping.fieldType})
+                                  → Will create new field &quot;{mapping.fieldName}&quot; ({mapping.fieldType})
                                   {mapping.fieldType === 'single_select' && (
                                     <span className="ml-1 text-blue-600 font-medium">
                                       (Select field detected)
