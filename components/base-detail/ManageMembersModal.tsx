@@ -27,8 +27,8 @@ export const ManageMembersModal = ({ isOpen, onClose, baseId }: ManageMembersMod
     try {
       const data = await MembershipService.listBaseMembers(baseId);
       setMembers(data);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load members");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load members");
     } finally {
       setLoading(false);
     }
@@ -45,8 +45,8 @@ export const ManageMembersModal = ({ isOpen, onClose, baseId }: ManageMembersMod
     try {
       await MembershipService.updateBaseMemberRole(membershipId, role);
       setMembers(prev => prev.map(m => m.membership_id === membershipId ? { ...m, role } : m));
-    } catch (e: any) {
-      setError(e?.message || "Failed to update member role");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update member role");
     }
   };
 
@@ -55,8 +55,8 @@ export const ManageMembersModal = ({ isOpen, onClose, baseId }: ManageMembersMod
     try {
       await MembershipService.removeBaseMember(membershipId);
       setMembers(prev => prev.filter(m => m.membership_id !== membershipId));
-    } catch (e: any) {
-      setError(e?.message || "Failed to remove member");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to remove member");
     }
   };
 
@@ -70,8 +70,8 @@ export const ManageMembersModal = ({ isOpen, onClose, baseId }: ManageMembersMod
       await MembershipService.createInvite({ email: inviteEmail.trim(), role: inviteRole, baseId, token });
       setSuccess("Invite created. Share the link with the recipient to accept.");
       setInviteEmail("");
-    } catch (e: any) {
-      setError(e?.message || "Failed to create invite");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to create invite");
     } finally {
       setInviting(false);
     }

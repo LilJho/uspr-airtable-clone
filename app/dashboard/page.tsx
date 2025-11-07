@@ -24,6 +24,7 @@ import { CreateWorkspaceModal } from "@/components/dashboard/modals/CreateWorksp
 import { DeleteWorkspaceModal } from "@/components/dashboard/modals/DeleteWorkspaceModal";
 import { DeleteBaseModal } from "@/components/dashboard/modals/DeleteBaseModal";
 import { ManageWorkspaceMembersModal } from "@/components/dashboard/modals/ManageWorkspaceMembersModal";
+import { ImportBaseModal } from "@/components/dashboard/modals/ImportBaseModal";
 
 // Utils
 import { getBaseContextMenuOptions } from "@/lib/utils/context-menu-helpers";
@@ -111,6 +112,7 @@ export default function Dashboard() {
   // Resolve delete permission for selected workspace/base context
   const { role, can } = useRole({ workspaceId: selectedWorkspaceId ?? undefined });
   const [isManageWorkspaceMembersOpen, setIsManageWorkspaceMembersOpen] = useState(false);
+  const [isImportBaseModalOpen, setIsImportBaseModalOpen] = useState(false);
 
   // Initialize data on component mount
   const initializeDashboard = useCallback(async () => {
@@ -158,7 +160,7 @@ export default function Dashboard() {
       const newWorkspace = await createWorkspace(formData);
       setSelectedWorkspaceId(newWorkspace.id);
       switchToWorkspaceView(newWorkspace.id);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Error is already handled in createWorkspace, but we can add UI feedback here
       const message = err instanceof Error ? err.message : 'Failed to create workspace';
       if (typeof window !== 'undefined') {
@@ -181,8 +183,8 @@ export default function Dashboard() {
         switchToHomeView();
         setSelectedWorkspaceId(null);
       }
-    } catch (err: any) {
-      const message = err?.message || 'Failed to delete workspace';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to delete workspace';
       // Avoid throwing raw objects to the runtime – surface to the user and log for devs
       console.error('Delete workspace error:', err);
       if (typeof window !== 'undefined') {
@@ -352,6 +354,7 @@ export default function Dashboard() {
             activeView={activeView}
             selectedWorkspaceId={selectedWorkspaceId}
             workspaces={workspaces}
+            onImport={() => setIsImportBaseModalOpen(true)}
           />
 
           <CreateWorkspaceModal
@@ -359,6 +362,22 @@ export default function Dashboard() {
             onClose={() => setIsCreateWorkspaceOpen(false)}
             onCreate={handleCreateWorkspace}
           />
+
+          {selectedWorkspaceId && (
+            <ImportBaseModal
+              isOpen={isImportBaseModalOpen}
+              onClose={() => setIsImportBaseModalOpen(false)}
+              workspaceId={selectedWorkspaceId}
+              onImportComplete={(baseId) => {
+                // Reload bases and navigate to the new base
+                loadRecentBases();
+                if (activeView === 'workspace' && selectedWorkspaceId) {
+                  loadWorkspaceBases(selectedWorkspaceId);
+                }
+                router.push(`/bases/${baseId}`);
+              }}
+            />
+          )}
 
           <DeleteWorkspaceModal
             isOpen={isDeleteWorkspaceModalOpen}

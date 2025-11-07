@@ -16,6 +16,7 @@ interface TopNavigationProps {
   onRenameTable: (tableId: string) => void;
   onDeleteTable: (tableId: string) => void;
   canDeleteTable?: boolean;
+  onExportBase?: () => void;
 }
 
 export const TopNavigation = ({
@@ -30,7 +31,8 @@ export const TopNavigation = ({
   onToggleMasterList,
   onRenameTable,
   onDeleteTable,
-  canDeleteTable = true
+  canDeleteTable = true,
+  onExportBase
 }: TopNavigationProps) => {
   const router = useRouter();
   const [isTableDropdownOpen, setIsTableDropdownOpen] = useState(false);
@@ -173,7 +175,21 @@ export const TopNavigation = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2" />
+        <div className="flex items-center gap-2">
+          {onExportBase && (
+            <button
+              type="button"
+              onClick={onExportBase}
+              className="px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-2"
+              title="Export base"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tab navigation */}

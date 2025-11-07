@@ -8,6 +8,7 @@ interface CreateBaseModalProps {
   activeView: ActiveView;
   selectedWorkspaceId: string | null;
   workspaces: WorkspaceRecord[];
+  onImport?: () => void;
 }
 
 export const CreateBaseModal = ({ 
@@ -16,7 +17,8 @@ export const CreateBaseModal = ({
   onCreate, 
   activeView, 
   selectedWorkspaceId, 
-  workspaces 
+  workspaces,
+  onImport
 }: CreateBaseModalProps) => {
   // Initialize with the selected workspace or the first available workspace
   const defaultWorkspaceId = selectedWorkspaceId || workspaces[0]?.id || "";
@@ -131,22 +133,40 @@ export const CreateBaseModal = ({
             />
           </div>
           {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              className="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-              onClick={() => !creating && onClose()}
-              disabled={creating}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
-              disabled={creating}
-            >
-              {creating ? "Creating..." : "Create"}
-            </button>
+          <div className="flex justify-between items-center pt-2">
+            {onImport && selectedWorkspaceId && (
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                onClick={() => {
+                  onClose();
+                  onImport();
+                }}
+                disabled={creating}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import Base
+              </button>
+            )}
+            <div className="flex justify-end gap-3 ml-auto">
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+                onClick={() => !creating && onClose()}
+                disabled={creating}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+                disabled={creating}
+              >
+                {creating ? "Creating..." : "Create"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

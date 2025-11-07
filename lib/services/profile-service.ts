@@ -50,7 +50,7 @@ export class ProfileService {
     const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
     if (upErr) throw upErr;
     const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
-    const url = (pub as any).publicUrl as string;
+    const url = (pub as { publicUrl: string }).publicUrl;
     await this.updateMyProfile({ avatar_url: url });
     return url;
   }
@@ -65,7 +65,7 @@ export class ProfileService {
       .eq('user_id', uid)
       .maybeSingle();
     if (error) throw error;
-    return (data as any) ?? null;
+    return (data as { email_product: boolean; email_activity: boolean } | null) ?? null;
   }
 
   static async upsertMyPreferences(updates: { email_product?: boolean; email_activity?: boolean }): Promise<void> {

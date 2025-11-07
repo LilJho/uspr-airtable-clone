@@ -37,8 +37,8 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
     try {
       const data = await MembershipService.listWorkspaceMembers(workspaceId);
       setMembers(data as WorkspaceMemberRow[]);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load members");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load members");
     } finally {
       setLoading(false);
     }
@@ -59,7 +59,7 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
         .select('owner')
         .eq('id', workspaceId)
         .single();
-      if (!error) setOwnerId((data as any)?.owner ?? null);
+      if (!error && data) setOwnerId((data as { owner?: string | null })?.owner ?? null);
     };
     void run();
   }, [isOpen, workspaceId]);
@@ -74,8 +74,8 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
       }
       await MembershipService.updateWorkspaceMemberRole(membershipId, role);
       setMembers(prev => prev.map(m => m.membership_id === membershipId ? { ...m, role } : m));
-    } catch (e: any) {
-      setError(e?.message || "Failed to update member role");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update member role");
     }
   };
 
@@ -89,8 +89,8 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
       }
       await MembershipService.removeWorkspaceMember(membershipId);
       setMembers(prev => prev.filter(m => m.membership_id !== membershipId));
-    } catch (e: any) {
-      setError(e?.message || "Failed to remove member");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to remove member");
     }
   };
 
@@ -104,8 +104,8 @@ export const ManageWorkspaceMembersModal = ({ isOpen, onClose, workspaceId }: Ma
       await MembershipService.createInvite({ email: inviteEmail.trim(), role: inviteRole, workspaceId, token });
       setSuccess("Invite created. Share the link with the recipient to accept.");
       setInviteEmail("");
-    } catch (e: any) {
-      setError(e?.message || "Failed to create invite");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to create invite");
     } finally {
       setInviting(false);
     }

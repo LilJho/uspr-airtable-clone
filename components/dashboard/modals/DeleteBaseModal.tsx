@@ -50,7 +50,7 @@ export const DeleteBaseModal = ({ isOpen, base, onClose, onDelete }: DeleteBaseM
         <div className="p-6">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <p className="text-sm text-red-700">
-              Are you sure you want to delete <strong>"{base.name}"</strong>? This will permanently delete the base and all of its tables and records. This action cannot be undone.
+              Are you sure you want to delete <strong>&quot;{base.name}&quot;</strong>? This will permanently delete the base and all of its tables and records. This action cannot be undone.
             </p>
           </div>
 

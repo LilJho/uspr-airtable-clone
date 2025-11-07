@@ -18,7 +18,6 @@ export default function AccountPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
-  const [linkingSupported] = useState<boolean>(() => typeof (supabase.auth as unknown as { linkIdentity?: unknown }).linkIdentity === 'function');
 
   type AuthUserDetails = {
     id: string;
@@ -98,8 +97,8 @@ export default function AccountPage() {
           middle_name: p?.middle_name ?? "",
           last_name: p?.last_name ?? "",
           phone: p?.phone ?? "",
-          timezone: (p as any)?.timezone ?? "",
-          locale: (p as any)?.locale ?? "",
+          timezone: (p && 'timezone' in p ? (p as { timezone?: string }).timezone : undefined) ?? "",
+          locale: (p && 'locale' in p ? (p as { locale?: string }).locale : undefined) ?? "",
           email_product: prefs?.email_product ?? true,
           email_activity: prefs?.email_activity ?? true,
         });
@@ -114,8 +113,8 @@ export default function AccountPage() {
           });
           emailForm.reset({ email: data.user.email ?? "" });
         }
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load profile');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Failed to load profile');
       } finally {
         setLoadingProfile(false);
       }
@@ -150,8 +149,8 @@ export default function AccountPage() {
       });
       setMessage('Profile updated');
       profileForm.reset(values);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to update profile');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to update profile');
     }
   });
 
@@ -162,8 +161,8 @@ export default function AccountPage() {
       await ProfileService.updatePassword(values.newPassword);
       setMessage('Password updated');
       passwordForm.reset({ newPassword: "" });
-    } catch (e: any) {
-      setError(e?.message || 'Failed to update password');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to update password');
     }
   });
 
@@ -178,8 +177,8 @@ export default function AccountPage() {
       } as unknown as { email: string });
       if (error) throw error;
       setMessage('Email update requested. Please check your inbox to confirm.');
-    } catch (e: any) {
-      setError(e?.message || 'Failed to update email');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to update email');
     }
   });
 
@@ -192,8 +191,8 @@ export default function AccountPage() {
       // global scope: invalidate across all sessions
       await supabase.auth.signOut({ scope: 'global' } as unknown as { scope?: 'global' });
       setMessage('Signed out from all devices.');
-    } catch (e: any) {
-      setError(e?.message || 'Failed to sign out globally');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to sign out globally');
     }
   };
 
@@ -275,8 +274,8 @@ export default function AccountPage() {
                     setProfile(p => p ? { ...p, avatar_url: url } as Profile : p);
                     // Notify listeners (e.g., TopBar) to refresh avatar
                     window.dispatchEvent(new CustomEvent('app:profile-avatar-changed', { detail: { url } }));
-                  } catch (err: any) {
-                    setError(err?.message || 'Failed to upload avatar');
+                  } catch (err: unknown) {
+                    setError(err instanceof Error ? err.message : 'Failed to upload avatar');
                   } finally {
                     inputEl.value = '';
                   }
@@ -407,20 +406,20 @@ export default function AccountPage() {
               <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label htmlFor="timezone" className="mb-1 block text-sm text-gray-600">Timezone</label>
-                  <select id="timezone" {...profileForm.register('timezone' as any)} className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer">
+                  <select id="timezone" {...profileForm.register('timezone')} className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer">
                     <option value="America/New_York">EST (America/New_York)</option>
                     <option value="Asia/Manila">Philippines GMT+8 (Asia/Manila)</option>
                   </select>
                 </div>
                 <div>
                   <label htmlFor="locale" className="mb-1 block text-sm text-gray-600">Locale</label>
-                  <input id="locale" {...profileForm.register('locale' as any)} placeholder="e.g., en-US" className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                  <input id="locale" {...profileForm.register('locale')} placeholder="e.g., en-US" className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm text-gray-600">Email preferences</label>
                   <div className="flex items-center gap-4 text-sm">
-                    <label className="inline-flex items-center gap-2"><input type="checkbox" {...(profileForm.register as any)('email_product')} /> Product updates</label>
-                    <label className="inline-flex items-center gap-2"><input type="checkbox" {...(profileForm.register as any)('email_activity')} /> Workspace activity</label>
+                    <label className="inline-flex items-center gap-2"><input type="checkbox" {...profileForm.register('email_product')} /> Product updates</label>
+                    <label className="inline-flex items-center gap-2"><input type="checkbox" {...profileForm.register('email_activity')} /> Workspace activity</label>
                   </div>
             </div>
           </div>
@@ -509,8 +508,10 @@ export default function AccountPage() {
                     onClick={async () => {
                       try {
                         const redirectTo = `${window.location.origin}/auth/callback`;
-                        if ((supabase.auth as unknown as { linkIdentity?: Function }).linkIdentity) {
-                          await (supabase.auth as unknown as { linkIdentity: Function }).linkIdentity({ provider: 'google', options: { redirectTo } });
+                        type LinkIdentityFn = (params: { provider: string; options: { redirectTo: string } }) => Promise<unknown>;
+                        const authWithLink = supabase.auth as unknown as { linkIdentity?: LinkIdentityFn };
+                        if (authWithLink.linkIdentity) {
+                          await authWithLink.linkIdentity({ provider: 'google', options: { redirectTo } });
                         } else {
                           await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
                         }
@@ -526,8 +527,10 @@ export default function AccountPage() {
                     onClick={async () => {
                       try {
                         const redirectTo = `${window.location.origin}/auth/callback`;
-                        if ((supabase.auth as unknown as { linkIdentity?: Function }).linkIdentity) {
-                          await (supabase.auth as unknown as { linkIdentity: Function }).linkIdentity({ provider: 'github', options: { redirectTo } });
+                        type LinkIdentityFn = (params: { provider: string; options: { redirectTo: string } }) => Promise<unknown>;
+                        const authWithLink = supabase.auth as unknown as { linkIdentity?: LinkIdentityFn };
+                        if (authWithLink.linkIdentity) {
+                          await authWithLink.linkIdentity({ provider: 'github', options: { redirectTo } });
                         } else {
                           await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo } });
                         }

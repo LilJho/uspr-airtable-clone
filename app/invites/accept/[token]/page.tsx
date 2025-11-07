@@ -24,9 +24,9 @@ export default function AcceptInvitePage() {
         setStatus("success");
         setMessage("Invite accepted. Redirecting to Dashboard...");
         setTimeout(() => router.push("/dashboard"), 1200);
-      } catch (e: any) {
+      } catch (e: unknown) {
         setStatus("error");
-        setMessage(e?.message || "Failed to accept invite.");
+        setMessage(e instanceof Error ? e.message : "Failed to accept invite.");
       }
     }
     if (token) void accept();

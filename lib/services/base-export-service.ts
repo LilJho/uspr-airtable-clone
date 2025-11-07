@@ -1,0 +1,248 @@
+import { supabase } from '../supabaseClient';
+import { BaseDetailService } from './base-detail-service';
+import type { BaseRow, TableRow, FieldRow, RecordRow, Automation } from '../types/base-detail';
+
+export type ExportedBase = {
+  version: string;
+  exportedAt: string;
+  base: {
+    name: string;
+    description: string | null;
+  };
+  tables: Array<{
+    name: string;
+    order_index: number;
+    is_master_list: boolean;
+  }>;
+  fields: Array<{
+    table_name: string; // Reference to table by name
+    name: string;
+    type: string;
+    order_index: number;
+    options: Record<string, unknown> | null;
+  }>;
+  automations: Array<{
+    table_name: string; // Reference to table by name
+    name: string;
+    enabled: boolean;
+    trigger: {
+      type: Automation['trigger']['type'];
+      table_id?: string; // Will be converted to table_name
+      field_id?: string; // Will be converted to field_name
+      field_name?: string; // Added for export
+      condition?: Automation['trigger']['condition'];
+    };
+    action: {
+      type: Automation['action']['type'];
+      target_table_id?: string; // Will be converted to table_name
+      target_table_name?: string; // Added for export
+      field_mappings: Array<{
+        source_field_id?: string; // Will be converted to field_name
+        source_field_name?: string; // Added for export
+        target_field_id?: string; // Will be converted to field_name
+        target_field_name?: string; // Added for export
+      }>;
+      preserve_original?: boolean;
+      sync_mode?: string;
+      duplicate_handling?: string;
+      visibility_field_id?: string;
+      visibility_field_name?: string; // Added for export
+      visibility_value?: string;
+    };
+  }>;
+  records?: Array<{
+    table_name: string; // Reference to table by name
+    values: Record<string, unknown>;
+  }>;
+};
+
+export class BaseExportService {
+  /**
+   * Export a base with all its tables, fields, automations, and optionally records
+   * @param baseId - The ID of the base to export
+   * @param includeRecords - Whether to include records in the export
+   * @param exportName - Optional custom name for the exported base (defaults to base.name)
+   */
+  static async exportBase(baseId: string, includeRecords: boolean = false, exportName?: string): Promise<ExportedBase> {
+    // 1. Get base metadata
+    const base = await BaseDetailService.getBase(baseId);
+    
+    // 2. Get all tables
+    const tables = await BaseDetailService.getTables(baseId);
+    
+    // 3. Get all fields for all tables
+    const allFields = await BaseDetailService.getAllFields(baseId);
+    
+    // 4. Get all automations for all tables
+    const allAutomations: Array<{ automation: Automation; tableName: string }> = [];
+    const fieldIdToName = new Map<string, { name: string; tableName: string }>();
+    
+    // Build field ID to name mapping
+    for (const field of allFields) {
+      const table = tables.find(t => t.id === field.table_id);
+      if (table) {
+        fieldIdToName.set(field.id, { name: field.name, tableName: table.name });
+      }
+    }
+    
+    for (const table of tables) {
+      try {
+        const automations = await BaseDetailService.getAutomations(table.id);
+        for (const automation of automations) {
+          allAutomations.push({ automation, tableName: table.name });
+        }
+      } catch (error) {
+        console.warn(`No automations found for table ${table.name}`);
+      }
+    }
+    
+    // 5. Optionally get all records
+    let records: Array<{ table_name: string; values: Record<string, unknown> }> | undefined;
+    if (includeRecords) {
+      const allRecords = await BaseDetailService.getAllRecordsFromBase(baseId);
+      
+      // Create a map of table_id -> table_name for record mapping
+      const tableIdToName = new Map(tables.map(t => [t.id, t.name]));
+      
+      // Create a map of field_id -> field_name for each table
+      const fieldIdToNameByTable = new Map<string, Map<string, string>>();
+      for (const table of tables) {
+        const tableFields = allFields.filter(f => f.table_id === table.id);
+        const fieldMap = new Map(tableFields.map(f => [f.id, f.name]));
+        fieldIdToNameByTable.set(table.id, fieldMap);
+      }
+      
+      // Map records to include table names and convert field IDs to field names
+      records = allRecords.map(record => {
+        const tableName = tableIdToName.get(record.table_id) || 'Unknown';
+        const fieldIdToName = fieldIdToNameByTable.get(record.table_id);
+        
+        // Convert field IDs to field names in values
+        const mappedValues: Record<string, unknown> = {};
+        if (fieldIdToName) {
+          for (const [fieldId, value] of Object.entries(record.values)) {
+            const fieldName = fieldIdToName.get(fieldId);
+            if (fieldName) {
+              mappedValues[fieldName] = value;
+            } else {
+              // Keep the field ID if we can't find the name (shouldn't happen, but safe fallback)
+              mappedValues[fieldId] = value;
+            }
+          }
+        } else {
+          // If we can't map fields, keep original values
+          Object.assign(mappedValues, record.values);
+        }
+        
+        return {
+          table_name: tableName,
+          values: mappedValues
+        };
+      });
+    }
+    
+    // Build the exported structure
+    const exported: ExportedBase = {
+      version: '1.0.0',
+      exportedAt: new Date().toISOString(),
+      base: {
+        name: exportName || base.name,
+        description: base.description
+      },
+      tables: tables.map(t => ({
+        name: t.name,
+        order_index: t.order_index,
+        is_master_list: t.is_master_list
+      })),
+      fields: allFields.map(f => {
+        // Find the table name for this field
+        const table = tables.find(t => t.id === f.table_id);
+        return {
+          table_name: table?.name || 'Unknown',
+          name: f.name,
+          type: f.type,
+          order_index: f.order_index,
+          options: f.options
+        };
+      }),
+      automations: allAutomations.map(({ automation, tableName }) => {
+        // Map trigger field_id to field_name
+        const triggerFieldInfo = automation.trigger?.field_id 
+          ? fieldIdToName.get(automation.trigger.field_id)
+          : undefined;
+        
+        // Map target table_id to table_name
+        const targetTable = automation.action?.target_table_id
+          ? tables.find(t => t.id === automation.action.target_table_id)
+          : undefined;
+        
+        // Map field mappings - safely handle missing field_mappings
+        const fieldMappings = (automation.action?.field_mappings || []).map(mapping => {
+          const sourceFieldInfo = mapping.source_field_id
+            ? fieldIdToName.get(mapping.source_field_id)
+            : undefined;
+          const targetFieldInfo = mapping.target_field_id
+            ? fieldIdToName.get(mapping.target_field_id)
+            : undefined;
+          
+          return {
+            source_field_id: mapping.source_field_id,
+            source_field_name: sourceFieldInfo?.name,
+            target_field_id: mapping.target_field_id,
+            target_field_name: targetFieldInfo?.name
+          };
+        });
+        
+        // Map visibility field if it exists
+        const visibilityFieldInfo = automation.action?.visibility_field_id
+          ? fieldIdToName.get(automation.action.visibility_field_id)
+          : undefined;
+        
+        return {
+          table_name: tableName,
+          name: automation.name,
+          enabled: automation.enabled !== false,
+          trigger: {
+            type: automation.trigger?.type || 'record_created',
+            ...(automation.trigger?.field_id && { field_id: automation.trigger.field_id }),
+            field_name: triggerFieldInfo?.name,
+            ...(automation.trigger?.condition && { condition: automation.trigger.condition }),
+            ...(automation.trigger?.table_id && { table_id: automation.trigger.table_id })
+          },
+          action: {
+            type: automation.action?.type || 'create_record',
+            ...(automation.action?.target_table_id && { target_table_id: automation.action.target_table_id }),
+            ...(targetTable?.name && { target_table_name: targetTable.name }),
+            field_mappings: fieldMappings,
+            ...(automation.action?.preserve_original !== undefined && { preserve_original: automation.action.preserve_original }),
+            ...(automation.action?.sync_mode && { sync_mode: automation.action.sync_mode }),
+            ...(automation.action?.duplicate_handling && { duplicate_handling: automation.action.duplicate_handling }),
+            ...(automation.action?.visibility_field_id && { visibility_field_id: automation.action.visibility_field_id }),
+            ...(visibilityFieldInfo?.name && { visibility_field_name: visibilityFieldInfo.name }),
+            ...(automation.action?.visibility_value !== undefined && { visibility_value: automation.action.visibility_value })
+          }
+        };
+      }),
+      ...(includeRecords && records ? { records } : {})
+    };
+    
+    return exported;
+  }
+  
+  /**
+   * Download exported base as JSON file
+   */
+  static downloadAsJson(exported: ExportedBase, baseName: string): void {
+    const jsonString = JSON.stringify(exported, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${baseName.replace(/[^a-z0-9]/gi, '_')}_export_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+}
+

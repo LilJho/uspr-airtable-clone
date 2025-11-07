@@ -38,8 +38,8 @@ export const WorkspaceActivityModal = ({ isOpen, onClose, workspaceId }: Workspa
         setLogs(data);
       }
       setNextCursor(data.length ? data[data.length - 1].created_at : null);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load activity');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load activity');
     } finally {
       setLoading(false);
     }

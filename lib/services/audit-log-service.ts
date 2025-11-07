@@ -45,7 +45,7 @@ export class AuditLogService {
       // If actor hydration fails, still return logs without actor details
       return logs.map(l => ({ ...l, actor: null }));
     }
-    const idToActor = new Map((actors ?? []).map((a: any) => [a.id as string, { id: a.id as string, full_name: (a as any).full_name as string | null }]));
+    const idToActor = new Map((actors ?? []).map((a: { id: string; full_name: string | null }) => [a.id, { id: a.id, full_name: a.full_name }]));
 
     return logs.map(l => ({
       ...l,

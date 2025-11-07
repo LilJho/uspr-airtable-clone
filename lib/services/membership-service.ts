@@ -41,7 +41,7 @@ export class MembershipService {
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    const memberships = (data ?? []).map((m: any) => ({
+    const memberships = (data ?? []).map((m: { id: string; user_id: string; role: string; created_at: string }) => ({
       membership_id: m.id,
       user_id: m.user_id,
       role: m.role,
@@ -61,7 +61,7 @@ export class MembershipService {
       console.warn('Failed to load profile names for workspace members:', pErr);
       return memberships;
     }
-    const idToName = new Map<string, string | null>((profiles ?? []).map((p: any) => [p.id, p.full_name ?? null]));
+    const idToName = new Map<string, string | null>((profiles ?? []).map((p: { id: string; full_name: string | null }) => [p.id, p.full_name ?? null]));
     return memberships.map(m => ({ ...m, full_name: idToName.get(m.user_id) ?? null }));
   }
 
@@ -96,10 +96,10 @@ export class MembershipService {
       .eq('base_id', baseId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data ?? []).map((m: any) => ({
+    return (data ?? []).map((m: { id: string; user_id: string; role: string; created_at: string }) => ({
       membership_id: m.id,
       user_id: m.user_id,
-      role: m.role,
+      role: m.role as RoleType,
       created_at: m.created_at,
     }));
   }
@@ -129,7 +129,13 @@ export class MembershipService {
 
   // Invites
   static async createInvite(params: { email: string; role: RoleType; workspaceId?: string; baseId?: string; token: string; redirectTo?: string; }): Promise<Invite> {
-    const payload: any = {
+    const payload: {
+      email: string;
+      role: RoleType;
+      token: string;
+      workspace_id: string | null;
+      base_id: string | null;
+    } = {
       email: params.email,
       role: params.role,
       token: params.token,

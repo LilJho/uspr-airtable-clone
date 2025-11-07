@@ -27,6 +27,7 @@ import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
 import { RoleTagsManager } from "@/components/base-detail/RoleTagsManager";
 import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
 import { DeleteFieldModal } from "@/components/base-detail/DeleteFieldModal";
+import { ExportBaseModal } from "@/components/base-detail/ExportBaseModal";
 
 // Types
 import type { FieldRow, RecordRow, FieldType } from "@/lib/types/base-detail";
@@ -108,6 +109,11 @@ export default function BaseDetailPage() {
   const [isDeleteBaseModalOpen, setIsDeleteBaseModalOpen] = useState(false);
   const openDeleteBaseModal = () => setIsDeleteBaseModalOpen(true);
   const closeDeleteBaseModal = () => setIsDeleteBaseModalOpen(false);
+
+  // Add state for export base modal
+  const [isExportBaseModalOpen, setIsExportBaseModalOpen] = useState(false);
+  const openExportBaseModal = () => setIsExportBaseModalOpen(true);
+  const closeExportBaseModal = () => setIsExportBaseModalOpen(false);
 
   // Add state for delete field modal
   const [isDeleteFieldModalOpen, setIsDeleteFieldModalOpen] = useState(false);
@@ -498,7 +504,8 @@ export default function BaseDetailPage() {
           onToggleMasterList={handleToggleMasterList}
           onRenameTable={handleRenameTable}
           onDeleteTable={handleDeleteTable}
-            canDeleteTable={can.delete}
+          canDeleteTable={can.delete}
+          onExportBase={openExportBaseModal}
         />
 
         {/* Table Controls */}
@@ -545,7 +552,7 @@ export default function BaseDetailPage() {
                   onAddField={handleAddField}
                   onFieldContextMenu={handleFieldContextMenu}
                   onRowContextMenu={handleRowContextMenu}
-                  {...(!can.delete ? ({ canDeleteRow: false } as any) : {})}
+                  {...(!can.delete ? { canDeleteRow: false } : {})}
                 />
               ) : (
                 <KanbanView
@@ -686,6 +693,14 @@ export default function BaseDetailPage() {
         onClose={closeDeleteFieldModal}
         onDeleteField={handleDeleteFieldConfirm}
         field={contextMenu?.data && contextMenu.type === 'field' ? (contextMenu.data as FieldRow) : null}
+      />
+
+      {/* Export Base Modal */}
+      <ExportBaseModal
+        isOpen={isExportBaseModalOpen}
+        onClose={closeExportBaseModal}
+        baseId={baseId}
+        baseName={base?.name || 'Base'}
       />
     </div>
   );

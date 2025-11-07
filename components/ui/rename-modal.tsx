@@ -87,16 +87,30 @@ export function RenameModal({
           
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
               <input
                 ref={inputRef}
                 type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter new name"
                 disabled={isLoading}
               />
+              {currentDescription !== undefined && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter description (optional)"
+                    rows={3}
+                    disabled={isLoading}
+                  />
+                </div>
+              )}
               {error && (
                 <p className="mt-2 text-sm text-red-600">{error}</p>
               )}
@@ -113,10 +127,10 @@ export function RenameModal({
               </button>
               <button
                 type="submit"
-                disabled={isLoading || !newName.trim() || newName.trim() === currentName}
+                disabled={isLoading || !name.trim() || (name.trim() === currentName && (currentDescription || "").trim() === description.trim())}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? "Renaming..." : "Rename"}
+                {isLoading ? "Saving..." : "Save"}
               </button>
             </div>
           </form>

@@ -69,7 +69,7 @@ export const useWorkspaces = () => {
             return [];
           }
           
-          const ids = (memberships || []).map((m: any) => m.workspace_id);
+          const ids = (memberships || []).map((m: { workspace_id: string }) => m.workspace_id);
           if (ids.length === 0) return [];
           
           // Get workspace details
@@ -85,7 +85,7 @@ export const useWorkspaces = () => {
           }
           
           // Normalize and deduplicate results
-          const normalized = (ws || []).map((w: any) => ({ id: w.id, name: w.name }));
+          const normalized = (ws || []).map((w: { id: string; name: string }) => ({ id: w.id, name: w.name }));
           const uniqMap = new Map<string, { id: string; name: string }>();
           normalized.forEach((w) => uniqMap.set(w.id, w));
           return Array.from(uniqMap.values());
@@ -127,14 +127,14 @@ export const useWorkspaces = () => {
       const newWorkspace = data as WorkspaceRecord;
       setWorkspaces(prev => [...prev, newWorkspace]);
       return newWorkspace;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Detailed error handling with proper message extraction
       const message = err instanceof Error 
         ? err.message 
         : (typeof err === 'object' && err && 'message' in err) 
-          ? String(err.message)
+          ? String((err as { message: unknown }).message)
           : (typeof err === 'object' && err && 'details' in err)
-            ? String(err.details)
+            ? String((err as { details: unknown }).details)
             : 'Failed to create workspace';
       
       setError(message);
@@ -165,10 +165,10 @@ export const useWorkspaces = () => {
     } catch (err) {
       const message = err instanceof Error
         ? err.message
-        : (typeof err === 'object' && err && 'message' in (err as any) && (err as any).message)
-          ? String((err as any).message)
-          : (typeof err === 'object' && err && 'details' in (err as any) && (err as any).details)
-            ? String((err as any).details)
+        : (typeof err === 'object' && err && 'message' in err)
+          ? String((err as { message: unknown }).message)
+          : (typeof err === 'object' && err && 'details' in err)
+            ? String((err as { details: unknown }).details)
             : 'Failed to delete workspace';
       setError(message);
       // Re-throw as a proper Error so upstream handlers receive a meaningful message
