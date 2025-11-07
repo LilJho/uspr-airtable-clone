@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { Crown } from "lucide-react";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
@@ -8,6 +8,7 @@ import { RenameModal } from "@/components/ui/rename-modal";
 // Hooks
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useBaseDetail } from "@/lib/hooks/useBaseDetail";
+import { useRole } from "@/lib/hooks/useRole";
 import { useBaseDetailState } from "@/lib/hooks/useBaseDetailState";
 
 // Components
@@ -23,6 +24,7 @@ import { EditFieldModal } from "@/components/base-detail/EditFieldModal";
 import { CreateTableModal } from "@/components/base-detail/CreateTableModal";
 import { RenameTableModal } from "@/components/base-detail/RenameTableModal";
 import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
+import { RoleTagsManager } from "@/components/base-detail/RoleTagsManager";
 import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
 import { DeleteFieldModal } from "@/components/base-detail/DeleteFieldModal";
 
@@ -113,9 +115,19 @@ export default function BaseDetailPage() {
   const closeDeleteFieldModal = () => setIsDeleteFieldModalOpen(false);
   
   const { contextMenu, setContextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+  const { role, can } = useRole({ baseId });
+  // Removed base-level manage members; handled at workspace level only
 
   // State for editing field
   const [editingField, setEditingField] = useState<FieldRow | null>(null);
+
+  // Mark base as opened on mount/id change
+  useEffect(() => {
+    if (!baseId) return;
+    BaseDetailService.markBaseOpened(baseId).catch((err) => {
+      console.error('Failed to mark base as opened', err);
+    });
+  }, [baseId]);
 
   // Event handlers
   const handleRenameBase = async (newName: string) => {
@@ -244,6 +256,10 @@ export default function BaseDetailPage() {
 
   const handleDeleteTableConfirm = async () => {
     if (!contextMenu?.tableId) return;
+    if (!can.delete) {
+      alert('You do not have permission to delete tables.');
+      return;
+    }
     
     try {
       await deleteTable(contextMenu.tableId);
@@ -400,7 +416,7 @@ export default function BaseDetailPage() {
     }
     
     // Default base context menu options
-    return base ? [
+    const options = base ? [
       {
         id: "rename",
         label: "Rename Base",
@@ -411,6 +427,7 @@ export default function BaseDetailPage() {
         ),
         onClick: openRenameModal,
       },
+      // Manage members moved to workspace level
       {
         id: "delete",
         label: "Delete Base",
@@ -423,6 +440,9 @@ export default function BaseDetailPage() {
         separator: true,
       },
     ] : [];
+
+    // Hide delete if not allowed
+    return options.filter(opt => !(opt.id === 'delete' && !can.delete));
   };
 
   const contextMenuOptions = getContextMenuOptions();
@@ -466,7 +486,7 @@ export default function BaseDetailPage() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Navigation */}
-        <TopNavigation
+          <TopNavigation
           base={base}
           tables={tables}
           selectedTableId={selectedTableId}
@@ -478,6 +498,7 @@ export default function BaseDetailPage() {
           onToggleMasterList={handleToggleMasterList}
           onRenameTable={handleRenameTable}
           onDeleteTable={handleDeleteTable}
+            canDeleteTable={can.delete}
         />
 
         {/* Table Controls */}
@@ -498,6 +519,7 @@ export default function BaseDetailPage() {
             onSort={() => {}} // TODO: Implement
             onColor={() => {}} // TODO: Implement
             onShare={() => {}} // TODO: Implement
+            canDeleteTable={can.delete}
           />
         )}
 
@@ -523,6 +545,7 @@ export default function BaseDetailPage() {
                   onAddField={handleAddField}
                   onFieldContextMenu={handleFieldContextMenu}
                   onRowContextMenu={handleRowContextMenu}
+                  {...(!can.delete ? ({ canDeleteRow: false } as any) : {})}
                 />
               ) : (
                 <KanbanView
@@ -532,6 +555,7 @@ export default function BaseDetailPage() {
                   onDeleteRow={deleteRecord}
                   onAddRow={handleAddRow}
                   savingCell={savingCell}
+                  canDeleteRow={can.delete}
                 />
               )}
             </div>
@@ -554,6 +578,12 @@ export default function BaseDetailPage() {
                 console.log('✅ Fields refreshed successfully');
               }}
             />
+          )}
+
+          {topTab === 'interfaces' && baseId && (role === 'owner' || role === 'admin') && (
+            <div className="p-6">
+              <RoleTagsManager scopeType="base" scopeId={baseId} />
+            </div>
           )}
 
           {topTab === 'interfaces' && (

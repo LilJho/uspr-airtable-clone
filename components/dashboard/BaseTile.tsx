@@ -1,15 +1,18 @@
 import { useRouter } from "next/navigation";
-import { Rocket, Star, MoreVertical } from "lucide-react";
-import { formatRelative } from "@/lib/utils/date-helpers";
+import { Rocket, Star, MoreVertical, Trash2 } from "lucide-react";
+import { formatRelative, formatInTimezone } from "@/lib/utils/date-helpers";
+import { useTimezone } from "@/lib/hooks/useTimezone";
 import type { BaseRecord } from "@/lib/types/dashboard";
 
 interface BaseTileProps {
   base: BaseRecord;
   onContextMenu?: (e: React.MouseEvent, base: BaseRecord) => void;
+  onDeleteClick?: (base: BaseRecord) => void;
 }
 
-export const BaseTile = ({ base, onContextMenu }: BaseTileProps) => {
+export const BaseTile = ({ base, onContextMenu, onDeleteClick }: BaseTileProps) => {
   const router = useRouter();
+  const { timezone } = useTimezone();
 
   const handleClick = (e: React.MouseEvent) => {
     // Only navigate if the MoreVertical button wasn't clicked
@@ -48,6 +51,15 @@ export const BaseTile = ({ base, onContextMenu }: BaseTileProps) => {
               <MoreVertical size={18} />
             </button>
           )}
+          {onDeleteClick && (
+            <button
+              className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteClick(base); }}
+              title="Delete base"
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
         </div>
       </div>
       <div className="mb-1 line-clamp-1 font-medium text-gray-900">{base.name}</div>
@@ -58,7 +70,7 @@ export const BaseTile = ({ base, onContextMenu }: BaseTileProps) => {
       )}
       {lastOpened && (
         <div className="mt-2 text-xs text-gray-500">
-          Opened {formatRelative(lastOpened)} · {new Date(lastOpened).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          Opened {formatRelative(lastOpened)} · {formatInTimezone(lastOpened, timezone)}
         </div>
       )}
     </div>

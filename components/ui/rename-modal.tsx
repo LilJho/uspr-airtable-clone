@@ -1,40 +1,55 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { X } from "lucide-react";
 
 interface RenameModalProps {
   isOpen: boolean;
   currentName: string;
+  currentDescription?: string | null;
   onClose: () => void;
-  onRename: (newName: string) => Promise<void>;
+  // New API to save both name and description
+  onSave?: (payload: { name: string; description: string }) => Promise<void>;
+  // Backward compatibility: if provided, will be used when only name is edited
+  onRename?: (newName: string) => Promise<void>;
   title?: string;
 }
 
 export function RenameModal({ 
   isOpen, 
-  currentName, 
+  currentName,
+  currentDescription = "",
   onClose, 
+  onSave,
   onRename, 
-  title = "Rename" 
+  title = "Edit Base" 
 }: RenameModalProps) {
-  const [newName, setNewName] = useState(currentName);
+  const [name, setName] = useState(currentName);
+  const [description, setDescription] = useState(currentDescription || "");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setNewName(currentName);
+      setName(currentName);
+      setDescription(currentDescription || "");
       setError(null);
       setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
       }, 100);
     }
-  }, [isOpen, currentName]);
+  }, [isOpen, currentName, currentDescription]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || newName.trim() === currentName) {
+    const trimmedName = name.trim();
+    const trimmedDescription = description.trim();
+    const nameChanged = trimmedName !== currentName.trim();
+    const descriptionChanged = (currentDescription || "").trim() !== trimmedDescription;
+
+    if (!trimmedName) return;
+    if (!nameChanged && !descriptionChanged) {
       onClose();
       return;
     }
@@ -43,10 +58,14 @@ export function RenameModal({
     setError(null);
     
     try {
-      await onRename(newName.trim());
+      if (onSave) {
+        await onSave({ name: trimmedName, description: trimmedDescription });
+      } else if (onRename && nameChanged) {
+        await onRename(trimmedName);
+      }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to rename");
+      setError(err instanceof Error ? err.message : "Failed to save changes");
     } finally {
       setIsLoading(false);
     }

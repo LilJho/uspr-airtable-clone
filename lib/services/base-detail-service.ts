@@ -104,12 +104,21 @@ export class BaseDetailService {
   static async getBase(baseId: string): Promise<BaseRow> {
     const { data, error } = await supabase
       .from("bases")
-      .select("id, name, description, created_at")
+      .select("id, name, description, created_at, last_opened_at")
       .eq("id", baseId)
       .single();
 
     if (error) throw error;
     return data as BaseRow;
+  }
+
+  static async markBaseOpened(baseId: string): Promise<void> {
+    const { error } = await supabase
+      .from("bases")
+      .update({ last_opened_at: new Date().toISOString() })
+      .eq("id", baseId);
+
+    if (error) throw error;
   }
 
   static async updateBase(baseId: string, updates: Partial<BaseRow>): Promise<void> {

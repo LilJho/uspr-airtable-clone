@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
@@ -14,6 +14,7 @@ import { useDashboardState } from "@/lib/hooks/useDashboardState";
 // Components
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { TopBar } from "@/components/dashboard/TopBar";
+import AccountPage from "@/app/account/page";
 import { Banner } from "@/components/dashboard/Banner";
 import { HomeView } from "@/components/dashboard/views/HomeView";
 import { WorkspaceView } from "@/components/dashboard/views/WorkspaceView";
@@ -21,10 +22,12 @@ import { StarredView } from "@/components/dashboard/views/StarredView";
 import { CreateBaseModal } from "@/components/dashboard/modals/CreateBaseModal";
 import { CreateWorkspaceModal } from "@/components/dashboard/modals/CreateWorkspaceModal";
 import { DeleteWorkspaceModal } from "@/components/dashboard/modals/DeleteWorkspaceModal";
-import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
+import { DeleteBaseModal } from "@/components/dashboard/modals/DeleteBaseModal";
+import { ManageWorkspaceMembersModal } from "@/components/dashboard/modals/ManageWorkspaceMembersModal";
 
 // Utils
 import { getBaseContextMenuOptions } from "@/lib/utils/context-menu-helpers";
+import { useRole } from "@/lib/hooks/useRole";
 
 // Types
 import type { BaseRecord } from "@/lib/types/dashboard";
@@ -45,6 +48,7 @@ export default function Dashboard() {
     loadStarredBases,
     createBase,
     renameBase,
+    updateBaseDetails,
     toggleStar,
     deleteBase,
     clearError: clearBasesError
@@ -52,6 +56,7 @@ export default function Dashboard() {
   
   const {
     workspaces,
+    sharedWorkspaces,
     error: workspacesError,
     loadWorkspaces,
     createWorkspace,
@@ -89,6 +94,7 @@ export default function Dashboard() {
     switchToWorkspaceView,
     switchToHomeView,
     switchToStarredView,
+    switchToAccountView,
     openCreateModal,
     closeCreateModal,
     openRenameModal,
@@ -102,21 +108,27 @@ export default function Dashboard() {
     setEditingWorkspaceName
   } = useDashboardState();
 
+  // Resolve delete permission for selected workspace/base context
+  const { role, can } = useRole({ workspaceId: selectedWorkspaceId ?? undefined });
+  const [isManageWorkspaceMembersOpen, setIsManageWorkspaceMembersOpen] = useState(false);
+
   // Initialize data on component mount
   const initializeDashboard = useCallback(async () => {
+    // Ensure user is present before loading data
+    if (!user) return;
     const defaultWorkspaceId = await loadWorkspaces();
     if (defaultWorkspaceId) {
       setSelectedWorkspaceId(defaultWorkspaceId);
     }
     await loadRecentBases();
-  }, [loadWorkspaces, loadRecentBases, setSelectedWorkspaceId]);
+  }, [user, loadWorkspaces, loadRecentBases, setSelectedWorkspaceId]);
 
   // Event handlers
   const handleBaseContextMenu = useCallback((e: React.MouseEvent, base: BaseRecord) => {
     e.preventDefault();
     e.stopPropagation();
     setSelectedBase(base);
-    showContextMenu(e, 'base', base);
+    showContextMenu(e);
   }, [setSelectedBase, showContextMenu]);
 
   const handleRenameBase = useCallback(async (newName: string) => {
@@ -124,20 +136,36 @@ export default function Dashboard() {
     await renameBase(selectedBase.id, newName);
   }, [selectedBase, renameBase]);
 
-  const handleDeleteBase = useCallback(async () => {
+  const handleEditBase = useCallback(async (payload: { name: string; description: string }) => {
     if (!selectedBase) return;
-    await deleteBase(selectedBase.id);
-    closeDeleteBaseModal();
-  }, [selectedBase, deleteBase, closeDeleteBaseModal]);
+    await updateBaseDetails(selectedBase.id, payload);
+  }, [selectedBase, updateBaseDetails]);
+
+  const handleDeleteBase = useCallback(async (base: BaseRecord) => {
+    openDeleteBaseModal(base);
+  }, [openDeleteBaseModal]);
+
+  const handleDeleteBaseShortcut = useCallback((base: BaseRecord) => {
+    openDeleteBaseModal(base);
+  }, [openDeleteBaseModal]);
 
   const handleCreateBase = useCallback(async (formData: { name: string; description: string; workspaceId: string }) => {
     await createBase(formData);
   }, [createBase]);
 
   const handleCreateWorkspace = useCallback(async (formData: { name: string }) => {
-    const newWorkspace = await createWorkspace(formData);
-    setSelectedWorkspaceId(newWorkspace.id);
-  }, [createWorkspace, setSelectedWorkspaceId]);
+    try {
+      const newWorkspace = await createWorkspace(formData);
+      setSelectedWorkspaceId(newWorkspace.id);
+      switchToWorkspaceView(newWorkspace.id);
+    } catch (err: any) {
+      // Error is already handled in createWorkspace, but we can add UI feedback here
+      const message = err instanceof Error ? err.message : 'Failed to create workspace';
+      if (typeof window !== 'undefined') {
+        alert(message);
+      }
+    }
+  }, [createWorkspace, setSelectedWorkspaceId, switchToWorkspaceView]);
 
   const handleEditWorkspace = useCallback(async (id: string, name: string) => {
     await updateWorkspace(id, name);
@@ -146,16 +174,23 @@ export default function Dashboard() {
 
   const handleDeleteWorkspace = useCallback(async () => {
     if (!workspaceToDelete) return;
-    
-    await deleteWorkspace(workspaceToDelete.id);
-        
-        // If we're deleting the currently selected workspace, switch to home
-        if (selectedWorkspaceId === workspaceToDelete.id) {
-      switchToHomeView();
-          setSelectedWorkspaceId(null);
-        }
-        
-    closeDeleteWorkspaceModal();
+    try {
+      await deleteWorkspace(workspaceToDelete.id);
+      // If we're deleting the currently selected workspace, switch to home
+      if (selectedWorkspaceId === workspaceToDelete.id) {
+        switchToHomeView();
+        setSelectedWorkspaceId(null);
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Failed to delete workspace';
+      // Avoid throwing raw objects to the runtime – surface to the user and log for devs
+      console.error('Delete workspace error:', err);
+      if (typeof window !== 'undefined') {
+        alert(message);
+      }
+    } finally {
+      closeDeleteWorkspaceModal();
+    }
   }, [workspaceToDelete, deleteWorkspace, selectedWorkspaceId, switchToHomeView, setSelectedWorkspaceId, closeDeleteWorkspaceModal]);
 
   const handleWorkspaceSelect = useCallback((workspaceId: string) => {
@@ -204,13 +239,15 @@ export default function Dashboard() {
   }, [activeView, selectedWorkspaceId, loadRecentBases, loadWorkspaceBases, loadStarredBases, router, hideContextMenu]);
 
   // Context menu options
-  const contextMenuOptions = selectedBase ? getBaseContextMenuOptions(selectedBase, {
-    onOpen: (baseId: string) => router.push(`/bases/${baseId}`),
-    onRename: openRenameModal,
-    onToggleStar: toggleStar,
-    onDuplicate: handleDuplicateBase,
-    onDelete: openDeleteBaseModal
-  }) : [];
+  const contextMenuOptions = selectedBase
+    ? getBaseContextMenuOptions(selectedBase, {
+        onOpen: (baseId: string) => router.push(`/bases/${baseId}`),
+        onRename: openRenameModal,
+        onToggleStar: toggleStar,
+        onDuplicate: handleDuplicateBase,
+        onDelete: openDeleteBaseModal,
+      }).filter((opt) => !(opt.id === "delete" && !can.delete))
+    : [];
 
   // Initialize dashboard on mount
   useEffect(() => {
@@ -233,6 +270,7 @@ export default function Dashboard() {
           activeView={activeView}
           selectedWorkspaceId={selectedWorkspaceId}
           workspaces={workspaces}
+          sharedWorkspaces={sharedWorkspaces}
           workspacesCollapsed={workspacesCollapsed}
           editingWorkspaceId={editingWorkspaceId}
           editingWorkspaceName={editingWorkspaceName}
@@ -254,7 +292,7 @@ export default function Dashboard() {
         {/* Main Content */}
         <section className="flex min-w-0 flex-1 flex-col">
           {/* Top Bar */}
-          <TopBar user={user} onSignOut={signOut} />
+          <TopBar user={user} onSignOut={signOut} onOpenAccount={switchToAccountView} />
 
           {/* Banner */}
           {showBanner && <Banner onClose={() => setShowBanner(false)} />}
@@ -284,6 +322,9 @@ export default function Dashboard() {
                 onCollectionViewChange={setCollectionView}
                 onCreateBase={openCreateModal}
                 onBaseContextMenu={handleBaseContextMenu}
+                onManageMembers={() => setIsManageWorkspaceMembersOpen(true)}
+                canManageMembers={role === 'owner' || role === 'admin'}
+                onDeleteBaseClick={handleDeleteBaseShortcut}
               />
             )}
             
@@ -294,6 +335,12 @@ export default function Dashboard() {
                 onCollectionViewChange={setCollectionView}
                 onBaseContextMenu={handleBaseContextMenu}
               />
+            )}
+
+            {activeView === 'account' && (
+              <div className="max-w-5xl">
+                <AccountPage />
+              </div>
             )}
           </main>
 
@@ -321,6 +368,15 @@ export default function Dashboard() {
             deleting={false}
           />
 
+          {/* Manage Workspace Members */}
+          {selectedWorkspaceId && (
+            <ManageWorkspaceMembersModal
+              isOpen={isManageWorkspaceMembersOpen}
+              onClose={() => setIsManageWorkspaceMembersOpen(false)}
+              workspaceId={selectedWorkspaceId}
+            />
+          )}
+
           {/* Context Menu */}
           {selectedBase && (
             <ContextMenu
@@ -331,22 +387,30 @@ export default function Dashboard() {
             />
           )}
 
-          {/* Rename Modal */}
+          {/* Edit Base Modal */}
           <RenameModal
             isOpen={isRenameModalOpen}
             currentName={selectedBase?.name || ""}
+            currentDescription={selectedBase?.description || ""}
             onClose={closeRenameModal}
+            onSave={handleEditBase}
             onRename={handleRenameBase}
-            title="Rename Base"
+            title="Edit Base"
           />
 
           {/* Delete Base Modal */}
           <DeleteBaseModal
             isOpen={isDeleteBaseModalOpen}
+            base={selectedBase}
             onClose={closeDeleteBaseModal}
-            onDeleteBase={handleDeleteBase}
-            baseName={selectedBase?.name || ""}
+            onDelete={async () => {
+              if (!selectedBase) return;
+              await deleteBase(selectedBase.id);
+              closeDeleteBaseModal();
+            }}
           />
+
+          
         </section>
       </div>
     </div>
