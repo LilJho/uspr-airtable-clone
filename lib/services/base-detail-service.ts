@@ -295,6 +295,15 @@ export class BaseDetailService {
   }
 
   static async createRecord(tableId: string, values: Record<string, unknown> = {}): Promise<RecordRow> {
+    // Get base_id and check if this is masterlist
+    const { data: table, error: tableError } = await supabase
+      .from("tables")
+      .select("base_id, is_master_list")
+      .eq("id", tableId)
+      .single();
+
+    if (tableError) throw tableError;
+
     const { data, error } = await supabase
       .from("records")
       .insert({ table_id: tableId, values })
@@ -302,6 +311,30 @@ export class BaseDetailService {
       .single();
 
     if (error) throw error;
+    
+    // If not creating in masterlist, ensure record also exists in masterlist
+    if (!table.is_master_list) {
+      try {
+        // Get masterlist table
+        const { data: masterlistTable, error: masterlistError } = await supabase
+          .from("tables")
+          .select("id")
+          .eq("base_id", table.base_id)
+          .eq("is_master_list", true)
+          .single();
+
+        if (!masterlistError && masterlistTable) {
+          // Create same record in masterlist
+          await supabase
+            .from("records")
+            .insert({ table_id: masterlistTable.id, values });
+          console.log('📋 Record also created in masterlist');
+        }
+      } catch (masterlistError) {
+        console.error('Failed to create record in masterlist:', masterlistError);
+        // Don't throw - the main record was created successfully
+      }
+    }
     
     // Check and execute automations for new record
     try {
@@ -896,11 +929,11 @@ export class BaseDetailService {
   }
 
   // Automation operations
-  static async getAutomations(tableId: string): Promise<Automation[]> {
+  static async getAutomations(baseId: string): Promise<Automation[]> {
     const { data, error } = await supabase
       .from("automations")
       .select("*")
-      .eq("table_id", tableId)
+      .eq("base_id", baseId)
       .order("created_at");
 
     if (error) throw error;
@@ -1010,7 +1043,7 @@ export class BaseDetailService {
   }
 
   // Automation execution
-  static async executeAutomation(automation: Automation, recordId: string, newValues?: Record<string, unknown>): Promise<void> {
+  static async executeAutomation(automation: Automation, recordId: string, newValues?: Record<string, unknown>, baseId?: string): Promise<void> {
     console.log('🎯 EXECUTING AUTOMATION:', automation.name, 'enabled:', automation.enabled, 'recordId:', recordId);
     
     if (!automation.enabled) {
@@ -1044,7 +1077,7 @@ export class BaseDetailService {
       throw new Error(`Automation ${automation.name} has no action configuration`);
     }
     
-    if (!automation.action.target_table_id) {
+    if (!automation.action.target_table_name) {
       throw new Error(`Automation ${automation.name} has no target table configured`);
     }
     
@@ -1052,9 +1085,45 @@ export class BaseDetailService {
       throw new Error(`Automation ${automation.name} has no field mappings configured`);
     }
 
+    // Resolve target_table_name to target_table_id
+    if (!baseId) {
+      // Get base_id from automation
+      baseId = automation.base_id;
+    }
+    
+    const { data: targetTable, error: tableError } = await supabase
+      .from("tables")
+      .select("id, name, is_master_list")
+      .eq("base_id", baseId)
+      .eq("name", automation.action.target_table_name)
+      .single();
+
+    if (tableError || !targetTable) {
+      throw new Error(`Target table "${automation.action.target_table_name}" not found in base`);
+    }
+
+    const targetTableId = targetTable.id;
+    const isTargetMasterlist = targetTable.is_master_list;
+
+    // Get masterlist table for this base
+    const { data: masterlistTable, error: masterlistError } = await supabase
+      .from("tables")
+      .select("id")
+      .eq("base_id", baseId)
+      .eq("is_master_list", true)
+      .single();
+
+    if (masterlistError || !masterlistTable) {
+      throw new Error(`Masterlist table not found in base`);
+    }
+
+    const masterlistTableId = masterlistTable.id;
+
     const { trigger, action } = automation;
     console.log('🔧 Trigger config:', trigger);
     console.log('🎬 Action config:', action);
+    console.log('🎯 Target table ID:', targetTableId, 'Name:', automation.action.target_table_name);
+    console.log('📋 Masterlist table ID:', masterlistTableId);
 
     // Check if trigger condition is met
     if (trigger.type === 'field_change' && trigger.field_id && trigger.condition) {
@@ -1188,23 +1257,23 @@ export class BaseDetailService {
     try {
       switch (action.type) {
         case 'copy_to_table':
-          console.log('📋 COPYING TO TABLE:', action.target_table_id);
-          await this.executeCopyToTable(recordId, action);
+          console.log('📋 COPYING TO TABLE:', automation.action.target_table_name);
+          await this.executeCopyToTable(recordId, action, targetTableId, masterlistTableId, isTargetMasterlist);
           console.log('✅ Copy to table completed');
           break;
         case 'move_to_table':
-          console.log('🔄 MOVING TO TABLE:', action.target_table_id);
-          await this.executeMoveToTable(recordId, action);
+          console.log('🔄 MOVING TO TABLE:', automation.action.target_table_name);
+          await this.executeMoveToTable(recordId, action, targetTableId, masterlistTableId, baseId);
           console.log('✅ Move to table completed');
           break;
         case 'sync_to_table':
-          console.log('🔄 Syncing to table:', action.target_table_id);
-          await this.executeSyncToTable(recordId, action);
+          console.log('🔄 Syncing to table:', automation.action.target_table_name);
+          await this.executeSyncToTable(recordId, action, targetTableId, masterlistTableId);
           console.log('✅ Sync to table completed');
           break;
         case 'show_in_table':
-          console.log('👁️ Showing in table:', action.target_table_id);
-          await this.executeShowInTable(recordId, action);
+          console.log('👁️ Showing in table:', automation.action.target_table_name);
+          await this.executeShowInTable(recordId, action, targetTableId, masterlistTableId);
           console.log('✅ Show in table completed');
           break;
         default:
@@ -1221,7 +1290,13 @@ export class BaseDetailService {
     }
   }
 
-  private static async executeCopyToTable(recordId: string, action: AutomationAction): Promise<void> {
+  private static async executeCopyToTable(
+    recordId: string, 
+    action: AutomationAction, 
+    targetTableId: string,
+    masterlistTableId: string,
+    isTargetMasterlist: boolean
+  ): Promise<void> {
     console.log('📋 Starting copy to table for record:', recordId);
     
     // Get source record
@@ -1263,7 +1338,7 @@ export class BaseDetailService {
       const { data: existingRecords, error: existingError } = await supabase
         .from("records")
         .select("id, values")
-        .eq("table_id", action.target_table_id);
+        .eq("table_id", targetTableId);
 
       if (existingError) throw existingError;
 
@@ -1294,63 +1369,145 @@ export class BaseDetailService {
       }
     }
 
+    // Note: Records are created per-table, so we don't need to check masterlist here
+    // The masterlist will be maintained separately when records are created/updated
+
     // Create record in target table
-    console.log('💾 Creating record in target table:', action.target_table_id);
-    const newRecord = await this.createRecord(action.target_table_id, targetValues);
+    console.log('💾 Creating record in target table:', targetTableId);
+    const newRecord = await this.createRecord(targetTableId, targetValues);
     console.log('✅ AUTOMATION SUCCESS: Record created successfully in target table:', newRecord.id);
   }
 
-  private static async executeMoveToTable(recordId: string, action: AutomationAction): Promise<void> {
-    console.log('🔄 MOVING RECORD: Moving record', recordId, 'to table', action.target_table_id);
+  private static async executeMoveToTable(
+    recordId: string, 
+    action: AutomationAction, 
+    targetTableId: string,
+    masterlistTableId: string,
+    baseId: string
+  ): Promise<void> {
+    console.log('🔄 MOVING RECORD: Moving record', recordId, 'to table', targetTableId);
     console.log('🔍 Action type:', action.type);
     console.log('🔍 Preserve original setting:', action.preserve_original);
-    console.log('🔍 Action details:', JSON.stringify(action, null, 2));
     
-    // First copy to target table
-    await this.executeCopyToTable(recordId, action);
+    // Get source record to find its current table
+    const { data: sourceRecord, error: fetchError } = await supabase
+      .from("records")
+      .select("table_id, values")
+      .eq("id", recordId)
+      .single();
 
-    // For move operations, we should delete from source table by default
-    // unless explicitly set to preserve the original
-    // The key fix: for move_to_table, we delete the original UNLESS preserve_original is explicitly true
-    const shouldDeleteOriginal = action.preserve_original !== true;
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        console.log('⚠️ SOURCE RECORD NOT FOUND: Record no longer exists, skipping move');
+        return;
+      }
+      throw fetchError;
+    }
+
+    const sourceTableId = sourceRecord.table_id;
+    const isSourceMasterlist = sourceTableId === masterlistTableId;
+    const isTargetMasterlist = targetTableId === masterlistTableId;
+
+    console.log('🔍 Source table ID:', sourceTableId, 'Is masterlist:', isSourceMasterlist);
+    console.log('🔍 Target table ID:', targetTableId, 'Is masterlist:', isTargetMasterlist);
+
+    // Ensure record exists in masterlist first
+    if (!isSourceMasterlist) {
+      // Check if record exists in masterlist
+      const { data: masterlistRecord, error: masterlistCheckError } = await supabase
+        .from("records")
+        .select("id")
+        .eq("table_id", masterlistTableId)
+        .eq("id", recordId)
+        .single();
+
+      if (masterlistCheckError && masterlistCheckError.code === 'PGRST116') {
+        // Create record in masterlist
+        console.log('📋 Creating record in masterlist first');
+        await this.createRecord(masterlistTableId, sourceRecord.values);
+        console.log('✅ Record created in masterlist');
+      } else if (!masterlistCheckError) {
+        // Update masterlist record with latest values
+        console.log('📋 Updating record in masterlist');
+        await this.updateRecord(recordId, sourceRecord.values);
+        console.log('✅ Record updated in masterlist');
+      }
+    }
+
+    // Copy to target table (if not masterlist)
+    if (!isTargetMasterlist) {
+      // Map field values
+      const targetValues: Record<string, unknown> = {};
+      for (const mapping of action.field_mappings) {
+        const sourceValue = sourceRecord.values[mapping.source_field_id];
+        targetValues[mapping.target_field_id] = sourceValue;
+      }
+      
+      // Check if record already exists in target table
+      const { data: existingRecords, error: existingError } = await supabase
+        .from("records")
+        .select("id")
+        .eq("table_id", targetTableId)
+        .eq("id", recordId)
+        .single();
+
+      if (existingError && existingError.code === 'PGRST116') {
+        // Create new record in target table
+        console.log('💾 Creating record in target table:', targetTableId);
+        await this.createRecord(targetTableId, targetValues);
+        console.log('✅ Record created in target table');
+      } else if (!existingError) {
+        // Update existing record in target table
+        console.log('💾 Updating existing record in target table:', targetTableId);
+        await this.updateRecord(recordId, targetValues);
+        console.log('✅ Record updated in target table');
+      }
+    }
+
+    // Remove from source table ONLY if:
+    // 1. It's not the masterlist (masterlist records are never deleted)
+    // 2. preserve_original is not explicitly true
+    // 3. Source and target are different tables
+    const shouldDeleteFromSource = 
+      !isSourceMasterlist && 
+      action.preserve_original !== true &&
+      sourceTableId !== targetTableId;
     
-    console.log('🔍 Should delete original:', shouldDeleteOriginal);
-    console.log('🔍 Preserve original flag:', action.preserve_original);
-    
-    if (shouldDeleteOriginal) {
-      console.log('🗑️ DELETING ORIGINAL: Removing record from source table as part of move operation');
-      try {
-        await this.deleteRecord(recordId);
-        console.log('✅ MOVE COMPLETED: Record successfully moved to target table and removed from source');
-        
-        // Verify the record was actually deleted
-        const { data: deletedRecord, error: verifyError } = await supabase
-          .from("records")
-          .select("id")
-          .eq("id", recordId)
-          .single();
-          
-        if (verifyError && verifyError.code === 'PGRST116') {
-          console.log('✅ VERIFICATION SUCCESS: Record confirmed deleted from source table');
-        } else if (deletedRecord) {
-          console.log('⚠️ VERIFICATION WARNING: Record still exists in source table after delete attempt');
-        }
-      } catch (deleteError) {
-        // Check if the record was already deleted by another automation
-        if (deleteError instanceof Error && deleteError.message.includes('PGRST116')) {
-          console.log('⚠️ RECORD ALREADY DELETED: Record was already removed by another automation');
-          return;
-        }
-        console.error('❌ DELETE FAILED: Error deleting record from source table:', deleteError);
-        throw deleteError;
+    if (shouldDeleteFromSource) {
+      console.log('🗑️ REMOVING FROM SOURCE TABLE: Removing record from source table (not masterlist)');
+      
+      // Delete from source table (but keep in masterlist)
+      const { error: deleteError } = await supabase
+        .from("records")
+        .delete()
+        .eq("id", recordId)
+        .eq("table_id", sourceTableId);
+
+      if (deleteError) {
+        console.error('❌ DELETE FAILED: Error removing record from source table:', deleteError);
+        // Don't throw - the move operation succeeded, just couldn't clean up source
+      } else {
+        console.log('✅ Record removed from source table (still in masterlist)');
       }
     } else {
-      console.log('📋 PRESERVING ORIGINAL: Keeping record in source table (preserve_original=true)');
-      console.log('⚠️ WARNING: This is a MOVE operation but preserve_original=true, so record will remain in source table');
+      if (isSourceMasterlist) {
+        console.log('📋 PRESERVING IN MASTERLIST: Record stays in masterlist (masterlist records are never deleted)');
+      } else if (action.preserve_original === true) {
+        console.log('📋 PRESERVING ORIGINAL: Keeping record in source table (preserve_original=true)');
+      } else {
+        console.log('📋 SKIPPING DELETE: Source and target are the same table');
+      }
     }
+
+    console.log('✅ MOVE COMPLETED: Record moved successfully');
   }
 
-  private static async executeSyncToTable(recordId: string, action: AutomationAction): Promise<void> {
+  private static async executeSyncToTable(
+    recordId: string, 
+    action: AutomationAction, 
+    targetTableId: string,
+    masterlistTableId: string
+  ): Promise<void> {
     // For sync, we update existing record or create new one
     const { data: sourceRecord, error: fetchError } = await supabase
       .from("records")
@@ -1376,7 +1533,7 @@ export class BaseDetailService {
       const { data: existingRecords, error: existingError } = await supabase
         .from("records")
         .select("id, values")
-        .eq("table_id", action.target_table_id);
+        .eq("table_id", targetTableId);
 
       if (existingError) throw existingError;
 
@@ -1389,15 +1546,20 @@ export class BaseDetailService {
         await this.updateRecord(existingRecord.id, targetValues);
       } else {
         // Create new record
-        await this.createRecord(action.target_table_id, targetValues);
+        await this.createRecord(targetTableId, targetValues);
       }
     } else {
       // No field mappings, just create new record
-      await this.createRecord(action.target_table_id, targetValues);
+      await this.createRecord(targetTableId, targetValues);
     }
   }
 
-  private static async executeShowInTable(recordId: string, action: AutomationAction): Promise<void> {
+  private static async executeShowInTable(
+    recordId: string, 
+    action: AutomationAction, 
+    targetTableId: string,
+    masterlistTableId: string
+  ): Promise<void> {
     // For show_in_table, we create a record that links back to the original
     // This is useful for creating views or filtered displays
     
@@ -1420,7 +1582,7 @@ export class BaseDetailService {
     // Add a reference to the original record
     targetValues['_source_record_id'] = recordId;
 
-    await this.createRecord(action.target_table_id, targetValues);
+    await this.createRecord(targetTableId, targetValues);
   }
 
   // Check and execute automations for a record update
@@ -1431,10 +1593,37 @@ export class BaseDetailService {
   ): Promise<void> {
     console.log('🔍 CHECKING AUTOMATIONS: Table:', tableId, 'Record:', recordId, 'Values:', newValues);
     
-    // Get all automations for this table
-    const automations = await this.getAutomations(tableId);
-    console.log('📋 AUTOMATIONS FOUND:', automations.length, 'automations');
-    console.log('📋 Automation details:', automations.map(a => ({ 
+    // Get base_id from table
+    const { data: table, error: tableError } = await supabase
+      .from("tables")
+      .select("base_id, name")
+      .eq("id", tableId)
+      .single();
+
+    if (tableError || !table) {
+      console.error('❌ ERROR: Could not find table:', tableError);
+      return;
+    }
+
+    const baseId = table.base_id;
+    const tableName = table.name;
+
+    // Get all automations for this base
+    const allAutomations = await this.getAutomations(baseId);
+    console.log('📋 ALL AUTOMATIONS FOUND:', allAutomations.length, 'automations for base');
+
+    // Filter automations that apply to this table/record
+    const applicableAutomations = allAutomations.filter(automation => {
+      // If trigger specifies a table_name, it must match
+      if (automation.trigger.table_name && automation.trigger.table_name !== tableName) {
+        return false;
+      }
+      // Otherwise, automation applies to all tables in the base
+      return true;
+    });
+
+    console.log('📋 APPLICABLE AUTOMATIONS:', applicableAutomations.length, 'automations');
+    console.log('📋 Automation details:', applicableAutomations.map(a => ({ 
       id: a.id, 
       name: a.name, 
       enabled: a.enabled,
@@ -1442,13 +1631,13 @@ export class BaseDetailService {
       action: a.action
     })));
 
-    if (automations.length === 0) {
-      console.log('⚠️ NO AUTOMATIONS: No automations found for this table');
+    if (applicableAutomations.length === 0) {
+      console.log('⚠️ NO APPLICABLE AUTOMATIONS: No automations found for this table/record');
       return;
     }
 
     // Execute each automation
-    for (const automation of automations) {
+    for (const automation of applicableAutomations) {
       try {
         console.log('⚡ EXECUTING AUTOMATION:', automation.name, 'for record:', recordId);
         console.log('🔍 Automation details:', {
@@ -1458,7 +1647,7 @@ export class BaseDetailService {
           trigger: automation.trigger,
           action: automation.action
         });
-        await this.executeAutomation(automation, recordId, newValues);
+        await this.executeAutomation(automation, recordId, newValues, baseId);
         console.log('✅ AUTOMATION COMPLETED:', automation.name);
       } catch (error) {
         console.error(`❌ AUTOMATION ERROR: ${automation.name} (${automation.id}):`, error);

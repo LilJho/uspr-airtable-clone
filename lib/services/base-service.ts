@@ -60,10 +60,10 @@ export class BaseService {
 
     const baseId = baseInsertData.id as string;
 
-    // 2) Create default Table
+    // 2) Create masterlist Table (always first table)
     const { data: tableInsertData, error: tableInsertError } = await supabase
       .from("tables")
-      .insert({ base_id: baseId, name: "Table 1", order_index: 0 })
+      .insert({ base_id: baseId, name: "masterlist", order_index: 0, is_master_list: true })
       .select("id")
       .single();
 
@@ -260,27 +260,19 @@ export class BaseService {
       }
     }
 
-    // 6. Copy all automations
-    // Get all automations for all tables in the original base
-    const allAutomations: Array<{ automation: Automation; tableId: string }> = [];
-    
-    for (const originalTable of originalTables) {
-      try {
-        const automations = await BaseDetailService.getAutomations(originalTable.id);
-        for (const automation of automations) {
-          allAutomations.push({ automation, tableId: originalTable.id });
-        }
-      } catch (error) {
-        // Continue if no automations found
-        console.warn(`No automations found for table ${originalTable.id}`);
-      }
+    // 6. Copy all automations (base-level automations)
+    // Note: Table names remain the same when duplicating, so we can use them directly
+
+    // Get all automations for the base (base-level automations)
+    let allAutomations: Automation[] = [];
+    try {
+      allAutomations = await BaseDetailService.getAutomations(baseId);
+    } catch (error) {
+      console.warn(`No automations found for base ${baseId}`);
     }
 
     // Create new automations with updated references
-    for (const { automation, tableId } of allAutomations) {
-      const newTableId = tableIdMapping.get(tableId);
-      if (!newTableId) continue;
-
+    for (const automation of allAutomations) {
       // Update trigger field_id if it exists
       const newTriggerFieldId = automation.trigger?.field_id 
         ? fieldIdMapping.get(automation.trigger.field_id) || undefined
@@ -301,30 +293,28 @@ export class BaseService {
         return null;
       }).filter((m): m is { source_field_id: string; target_field_id: string } => m !== null) || [];
 
-      // Update target_table_id in action
-      const newTargetTableId = automation.action?.target_table_id
-        ? tableIdMapping.get(automation.action.target_table_id) || automation.action.target_table_id
-        : undefined;
-
-      // Skip automation if target_table_id is missing
-      if (!newTargetTableId) {
-        console.warn(`Skipping automation ${automation.name}: target_table_id not found`);
+      // Update target_table_name in action (table names should be the same, but verify)
+      if (!automation.action?.target_table_name) {
+        console.warn(`Skipping automation ${automation.name}: target_table_name not found`);
         continue;
       }
+
+      // Table names remain the same when duplicating, so we can use the original name
+      const newTargetTableName = automation.action.target_table_name;
 
       // Create the new automation
       const newAutomation: Omit<Automation, 'id' | 'created_at'> = {
         name: automation.name,
-        table_id: newTableId,
+        base_id: newBaseId, // Changed from table_id to base_id for base-level automations
         enabled: automation.enabled || false,
         trigger: {
           ...automation.trigger,
-          table_id: newTableId,
-          field_id: newTriggerFieldId
+          ...(automation.trigger?.table_name && { table_name: automation.trigger.table_name }), // Keep table_name if it exists
+          ...(newTriggerFieldId && { field_id: newTriggerFieldId })
         },
         action: {
           ...automation.action,
-          target_table_id: newTargetTableId,
+          target_table_name: newTargetTableName, // Changed from target_table_id to target_table_name
           field_mappings: newFieldMappings
         }
       };

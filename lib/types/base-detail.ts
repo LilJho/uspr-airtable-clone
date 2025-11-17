@@ -39,7 +39,7 @@ export type RecordRow = {
 
 export type AutomationTrigger = {
   type: 'field_change' | 'record_created' | 'record_updated';
-  table_id: string;
+  table_name?: string; // Optional: if not specified, applies to all tables in base
   field_id?: string;
   condition?: {
     operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal';
@@ -49,7 +49,7 @@ export type AutomationTrigger = {
 
 export type AutomationAction = {
   type: 'create_record' | 'update_record' | 'copy_fields' | 'copy_to_table' | 'move_to_table' | 'sync_to_table' | 'show_in_table';
-  target_table_id: string;
+  target_table_name: string; // Changed to table name for base-level automations
   field_mappings: Array<{
     source_field_id: string;
     target_field_id: string;
@@ -59,12 +59,14 @@ export type AutomationAction = {
   duplicate_handling?: 'skip' | 'update' | 'create_new';
   visibility_field_id?: string;
   visibility_value?: string;
+  status_field_id?: string; // Field ID that contains the status value
+  status_value?: string; // Status value that triggers this automation
 };
 
 export type Automation = {
   id: string;
   name: string;
-  table_id: string;
+  base_id: string; // Changed from table_id to base_id
   trigger: AutomationTrigger;
   action: AutomationAction;
   enabled: boolean;

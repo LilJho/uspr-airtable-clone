@@ -573,7 +573,7 @@ export default function BaseDetailPage() {
               automations={automations}
               tables={tables}
               fields={allFields}
-              activeTableId={selectedTableId || undefined}
+              baseId={baseId || ''}
               onCreateAutomation={createAutomation}
               onUpdateAutomation={updateAutomation}
               onDeleteAutomation={deleteAutomation}

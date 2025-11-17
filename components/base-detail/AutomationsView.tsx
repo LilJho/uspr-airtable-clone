@@ -8,7 +8,7 @@ interface AutomationsViewProps {
   automations: Automation[];
   tables: TableRow[];
   fields: FieldRow[];
-  activeTableId?: string;
+  baseId: string; // Changed from activeTableId to baseId for base-level automations
   onCreateAutomation: (automation: Omit<Automation, 'id' | 'created_at'>) => void;
   onUpdateAutomation: (id: string, updates: Partial<Automation>) => void;
   onDeleteAutomation: (id: string) => void;
@@ -20,7 +20,7 @@ export const AutomationsView = ({
   automations,
   tables,
   fields,
-  activeTableId,
+  baseId,
   onCreateAutomation,
   onUpdateAutomation,
   onDeleteAutomation,
@@ -79,9 +79,9 @@ export const AutomationsView = ({
     }
   };
 
-  const getTargetTableName = (tableId: string) => {
-    const table = tables.find(t => t.id === tableId);
-    return table?.name || 'Unknown Table';
+  const getTargetTableName = (tableName: string) => {
+    // target_table_name is already a table name, not an ID
+    return tableName || 'Unknown Table';
   };
 
   return (
@@ -152,7 +152,7 @@ export const AutomationsView = ({
                         <span className="font-medium">Trigger:</span> {getTriggerLabel(automation.trigger)}
                       </p>
                       <p>
-                        <span className="font-medium">Action:</span> {getActionLabel(automation.action.type)} → {getTargetTableName(automation.action.target_table_id)}
+                        <span className="font-medium">Action:</span> {getActionLabel(automation.action.type)} → {getTargetTableName(automation.action.target_table_name)}
                       </p>
                       {automation.action.field_mappings.length > 0 && (
                         <p>
@@ -208,7 +208,7 @@ export const AutomationsView = ({
         <CreateAutomationModal
           tables={tables}
           fields={fields}
-          activeTableId={activeTableId}
+          baseId={baseId}
           onClose={() => setIsCreateModalOpen(false)}
           onSave={(automation) => {
             onCreateAutomation(automation);
@@ -222,7 +222,7 @@ export const AutomationsView = ({
         <CreateAutomationModal
           tables={tables}
           fields={fields}
-          activeTableId={activeTableId}
+          baseId={baseId}
           automation={editingAutomation}
           onClose={() => setEditingAutomation(null)}
           onSave={(automation) => {
@@ -238,6 +238,7 @@ export const AutomationsView = ({
           automation={copyingAutomation}
           tables={tables}
           fields={fields}
+          baseId={baseId}
           onClose={() => setCopyingAutomation(null)}
           onCopy={(automation, fieldMappings) => {
             onCreateAutomation(automation);

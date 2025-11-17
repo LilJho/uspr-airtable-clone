@@ -192,10 +192,10 @@ export default function WorkspacePage() {
 
       const baseId = baseInsertData.id as string;
 
-      // 2) Create default Table
+      // 2) Create masterlist Table (always first table)
       const { data: tableInsertData, error: tableInsertError } = await supabase
         .from("tables")
-        .insert({ base_id: baseId, name: "Table 1", order_index: 0 })
+        .insert({ base_id: baseId, name: "masterlist", order_index: 0, is_master_list: true })
         .select("id")
         .single();
 

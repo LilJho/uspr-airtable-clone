@@ -6,7 +6,7 @@ import { BaseDetailService } from "@/lib/services/base-detail-service";
 interface CreateAutomationModalProps {
   tables: TableRow[];
   fields: FieldRow[];
-  activeTableId?: string;
+  baseId: string; // Changed from activeTableId to baseId for base-level automations
   automation?: Automation;
   onClose: () => void;
   onSave: (automation: Omit<Automation, 'id' | 'created_at'>) => void;
@@ -16,7 +16,7 @@ interface CreateAutomationModalProps {
 export const CreateAutomationModal = ({
   tables,
   fields,
-  activeTableId,
+  baseId,
   automation,
   onClose,
   onSave,
@@ -24,11 +24,11 @@ export const CreateAutomationModal = ({
 }: CreateAutomationModalProps) => {
   const [formData, setFormData] = useState({
     name: automation?.name || '',
-    table_id: automation?.table_id || activeTableId || '',
+    base_id: automation?.base_id || baseId,
     enabled: automation?.enabled ?? true,
     trigger: {
       type: automation?.trigger.type || 'field_change' as const,
-      table_id: automation?.trigger.table_id || activeTableId || '',
+      table_name: automation?.trigger.table_name || '', // Optional: if empty, applies to all tables
       field_id: automation?.trigger.field_id || '',
       condition: automation?.trigger.condition || {
         operator: 'equals' as const,
@@ -37,7 +37,7 @@ export const CreateAutomationModal = ({
     },
     action: {
       type: automation?.action.type || 'copy_to_table' as const,
-      target_table_id: automation?.action.target_table_id || '',
+      target_table_name: automation?.action.target_table_name || '', // Changed to table_name
       field_mappings: automation?.action.field_mappings || [],
       preserve_original: automation?.action.preserve_original ?? (automation?.action.type === 'move_to_table' ? false : true),
       sync_mode: automation?.action.sync_mode || 'one_way' as const,
@@ -76,20 +76,37 @@ export const CreateAutomationModal = ({
 
   // Reset trigger field when source table changes
   useEffect(() => {
-    if (formData.table_id && formData.trigger.field_id) {
-      const sourceFields = fields.filter(f => f.table_id === formData.table_id);
-      const fieldExists = sourceFields.find(f => f.id === formData.trigger.field_id);
-      if (!fieldExists) {
-        setFormData(prev => ({
-          ...prev,
-          trigger: { ...prev.trigger, field_id: '' }
-        }));
+    if (formData.trigger.table_name && formData.trigger.field_id) {
+      // Find table by name
+      const sourceTable = tables.find(t => t.name === formData.trigger.table_name);
+      if (sourceTable) {
+        const sourceFields = fields.filter(f => f.table_id === sourceTable.id);
+        const fieldExists = sourceFields.find(f => f.id === formData.trigger.field_id);
+        if (!fieldExists) {
+          setFormData(prev => ({
+            ...prev,
+            trigger: { ...prev.trigger, field_id: '' }
+          }));
+        }
       }
     }
-  }, [formData.table_id, fields]);
+  }, [formData.trigger.table_name, fields, tables]);
 
-  const sourceFields = fields.filter(f => f.table_id === formData.table_id);
-  const targetFields = fields.filter(f => f.table_id === formData.action.target_table_id);
+  // Get source fields - if table_name is specified, filter by that table; otherwise show all fields
+  const sourceTable = formData.trigger.table_name 
+    ? tables.find(t => t.name === formData.trigger.table_name)
+    : null;
+  const sourceFields = sourceTable 
+    ? fields.filter(f => f.table_id === sourceTable.id)
+    : fields; // Show all fields if no table specified
+
+  // Get target fields - filter by target table name
+  const targetTable = formData.action.target_table_name
+    ? tables.find(t => t.name === formData.action.target_table_name)
+    : null;
+  const targetFields = targetTable
+    ? fields.filter(f => f.table_id === targetTable.id)
+    : [];
   
   // Get the selected field to determine appropriate operators
   const selectedField = sourceFields.find(f => f.id === formData.trigger.field_id);
@@ -103,12 +120,11 @@ export const CreateAutomationModal = ({
       newErrors.name = 'Automation name is required';
     }
 
-    if (!formData.table_id) {
-      newErrors.table_id = 'Source table is required';
-    }
+    // table_name is optional - if empty, applies to all tables
+    // No validation needed for source table
 
-    if (!formData.action.target_table_id) {
-      newErrors.target_table_id = 'Target table is required';
+    if (!formData.action.target_table_name) {
+      newErrors.target_table_name = 'Target table is required';
     }
 
     if (formData.trigger.type === 'field_change' && !formData.trigger.field_id) {
@@ -132,11 +148,11 @@ export const CreateAutomationModal = ({
 
     const automationData: Omit<Automation, 'id' | 'created_at'> = {
       name: formData.name,
-      table_id: formData.table_id,
+      base_id: formData.base_id,
       enabled: formData.enabled,
       trigger: {
         type: formData.trigger.type,
-        table_id: formData.table_id,
+        table_name: formData.trigger.table_name || undefined, // Optional - if empty, applies to all tables
         field_id: formData.trigger.field_id || undefined,
         condition: formData.trigger.condition.operator && formData.trigger.condition.value 
           ? formData.trigger.condition 
@@ -144,7 +160,7 @@ export const CreateAutomationModal = ({
       },
       action: {
         type: formData.action.type,
-        target_table_id: formData.action.target_table_id,
+        target_table_name: formData.action.target_table_name,
         field_mappings: formData.action.field_mappings,
         preserve_original: formData.action.preserve_original,
         sync_mode: formData.action.sync_mode,
@@ -191,7 +207,7 @@ export const CreateAutomationModal = ({
   };
 
   const handleCreateField = async () => {
-    if (!formData.action.target_table_id || !newFieldData.name.trim()) {
+    if (!formData.action.target_table_name || !newFieldData.name.trim() || !targetTable) {
       return;
     }
 
@@ -199,7 +215,7 @@ export const CreateAutomationModal = ({
       const newField = await BaseDetailService.createField({
         name: newFieldData.name,
         type: newFieldData.type,
-        table_id: formData.action.target_table_id,
+        table_id: targetTable.id,
         order_index: targetFields.length
       });
 
@@ -229,7 +245,7 @@ export const CreateAutomationModal = ({
   };
 
   const mapAllFields = async () => {
-    if (!formData.table_id || !formData.action.target_table_id) {
+    if (!formData.action.target_table_name || !targetTable) {
       return;
     }
 
@@ -240,7 +256,7 @@ export const CreateAutomationModal = ({
       const newMappings: { source_field_id: string; target_field_id: string }[] = [];
       const fieldsToCreate: { name: string; type: FieldType; order_index: number }[] = [];
 
-      // Get all source fields
+      // Get all source fields (from specified table or all fields if no table specified)
       const allSourceFields = sourceFields;
       
       for (const sourceField of allSourceFields) {
@@ -264,7 +280,7 @@ export const CreateAutomationModal = ({
           const newField = await BaseDetailService.createField({
             name: fieldData.name,
             type: fieldData.type,
-            table_id: formData.action.target_table_id,
+            table_id: targetTable.id,
             order_index: fieldData.order_index
           });
           createdFields.push(newField);
@@ -352,27 +368,27 @@ export const CreateAutomationModal = ({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Source Table *
+                Source Table (Optional)
               </label>
               <select
-                value={formData.table_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, table_id: e.target.value }))}
-                disabled={!!activeTableId && !automation}
+                value={formData.trigger.table_name || ''}
+                onChange={(e) => setFormData(prev => ({ 
+                  ...prev, 
+                  trigger: { ...prev.trigger, table_name: e.target.value }
+                }))}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.table_id ? 'border-red-500' : 'border-gray-300'
-                } ${activeTableId && !automation ? 'bg-gray-50 text-gray-600' : ''}`}
+                  errors.table_name ? 'border-red-500' : 'border-gray-300'
+                }`}
               >
-                <option value="">Select source table</option>
+                <option value="">All tables in base (default)</option>
                 {tables.map(table => (
-                  <option key={table.id} value={table.id}>{table.name}</option>
+                  <option key={table.id} value={table.name}>{table.name}</option>
                 ))}
               </select>
-              {activeTableId && !automation && (
-                <p className="text-sm text-blue-600 mt-1">
-                  Automatically assigned to the active table
-                </p>
-              )}
-              {errors.table_id && <p className="text-red-500 text-sm mt-1">{errors.table_id}</p>}
+              <p className="text-sm text-gray-500 mt-1">
+                Leave empty to apply automation to all tables, or select a specific table
+              </p>
+              {errors.table_name && <p className="text-red-500 text-sm mt-1">{errors.table_name}</p>}
             </div>
           </div>
 
@@ -421,15 +437,20 @@ export const CreateAutomationModal = ({
                     >
                       <option value="">Select field</option>
                       {sourceFields.length === 0 ? (
-                        <option value="" disabled>No fields available for selected table</option>
+                        <option value="" disabled>No fields available{formData.trigger.table_name ? ' for selected table' : ''}</option>
                       ) : (
-                        sourceFields.map(field => (
-                          <option key={field.id} value={field.id}>{field.name}</option>
-                        ))
+                        sourceFields.map(field => {
+                          const fieldTable = tables.find(t => t.id === field.table_id);
+                          return (
+                            <option key={field.id} value={field.id}>
+                              {field.name}{fieldTable ? ` (${fieldTable.name})` : ''}
+                            </option>
+                          );
+                        })
                       )}
                     </select>
                     {errors.trigger_field && <p className="text-red-500 text-sm mt-1">{errors.trigger_field}</p>}
-                    {sourceFields.length === 0 && formData.table_id && (
+                    {sourceFields.length === 0 && formData.trigger.table_name && (
                       <p className="text-yellow-600 text-sm mt-1">No fields found for the selected table</p>
                     )}
                   </div>
@@ -523,7 +544,7 @@ export const CreateAutomationModal = ({
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-image.png                  <option value="copy_to_table">Copy to Table (creates new record)</option>
+                  <option value="copy_to_table">Copy to Table (creates new record)</option>
                   <option value="move_to_table">Move to Table (moves record)</option>
                   <option value="sync_to_table">Sync to Table (updates existing or creates new)</option>
                   <option value="copy_fields">Copy Fields (copies field values only)</option>
@@ -535,21 +556,21 @@ image.png                  <option value="copy_to_table">Copy to Table (creates 
                   Target Table *
                 </label>
                 <select
-                  value={formData.action.target_table_id}
+                  value={formData.action.target_table_name}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    action: { ...prev.action, target_table_id: e.target.value }
+                    action: { ...prev.action, target_table_name: e.target.value }
                   }))}
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.target_table_id ? 'border-red-500' : 'border-gray-300'
+                    errors.target_table_name ? 'border-red-500' : 'border-gray-300'
                   }`}
                 >
                   <option value="">Select target table</option>
                   {tables.map(table => (
-                    <option key={table.id} value={table.id}>{table.name}</option>
+                    <option key={table.id} value={table.name}>{table.name}</option>
                   ))}
                 </select>
-                {errors.target_table_id && <p className="text-red-500 text-sm mt-1">{errors.target_table_id}</p>}
+                {errors.target_table_name && <p className="text-red-500 text-sm mt-1">{errors.target_table_name}</p>}
               </div>
             </div>
 
@@ -599,7 +620,7 @@ image.png                  <option value="copy_to_table">Copy to Table (creates 
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  {formData.table_id && formData.action.target_table_id && (
+                  {formData.action.target_table_name && (
                     <button
                       type="button"
                       onClick={mapAllFields}
@@ -638,9 +659,9 @@ image.png                  <option value="copy_to_table">Copy to Table (creates 
                 <div className="text-center py-8 text-gray-500">
                   <p className="mb-2">No field mappings yet</p>
                   <p className="text-sm">
-                    {formData.table_id && formData.action.target_table_id 
+                    {formData.action.target_table_name 
                       ? 'Click "Map All Fields" to automatically map all source fields, or "Add Mapping" for manual mapping'
-                      : 'Select source and target tables, then click "Map All Fields" or "Add Mapping" to start mapping fields'
+                      : 'Select target table, then click "Map All Fields" or "Add Mapping" to start mapping fields'
                     }
                   </p>
                 </div>
@@ -662,9 +683,14 @@ image.png                  <option value="copy_to_table">Copy to Table (creates 
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select source field</option>
-                      {sourceFields.map(field => (
-                        <option key={field.id} value={field.id}>{field.name}</option>
-                      ))}
+                      {sourceFields.map(field => {
+                        const fieldTable = tables.find(t => t.id === field.table_id);
+                        return (
+                          <option key={field.id} value={field.id}>
+                            {field.name}{fieldTable ? ` (${fieldTable.name})` : ''}
+                          </option>
+                        );
+                      })}
                       {mapping.source_field_id && (
                         <option value="" style={{ color: '#ef4444' }}>✕ None (clear selection)</option>
                       )}

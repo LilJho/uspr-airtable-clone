@@ -73,7 +73,7 @@ export class BaseExportService {
     // 3. Get all fields for all tables
     const allFields = await BaseDetailService.getAllFields(baseId);
     
-    // 4. Get all automations for all tables
+    // 4. Get all automations for the base (base-level automations)
     const allAutomations: Array<{ automation: Automation; tableName: string }> = [];
     const fieldIdToName = new Map<string, { name: string; tableName: string }>();
     
@@ -85,15 +85,16 @@ export class BaseExportService {
       }
     }
     
-    for (const table of tables) {
-      try {
-        const automations = await BaseDetailService.getAutomations(table.id);
-        for (const automation of automations) {
-          allAutomations.push({ automation, tableName: table.name });
-        }
-      } catch (error) {
-        console.warn(`No automations found for table ${table.name}`);
+    // Get all automations for the base (not per table anymore)
+    try {
+      const automations = await BaseDetailService.getAutomations(baseId);
+      for (const automation of automations) {
+        // Get table name from trigger.table_name if specified, otherwise use "All tables"
+        const tableName = automation.trigger?.table_name || 'All tables';
+        allAutomations.push({ automation, tableName });
       }
+    } catch (error) {
+      console.warn(`No automations found for base ${base.name}`);
     }
     
     // 5. Optionally get all records
@@ -171,9 +172,9 @@ export class BaseExportService {
           ? fieldIdToName.get(automation.trigger.field_id)
           : undefined;
         
-        // Map target table_id to table_name
-        const targetTable = automation.action?.target_table_id
-          ? tables.find(t => t.id === automation.action.target_table_id)
+        // Map target table_name to table object (target_table_name is already a name, not an ID)
+        const targetTable = automation.action?.target_table_name
+          ? tables.find(t => t.name === automation.action.target_table_name)
           : undefined;
         
         // Map field mappings - safely handle missing field_mappings
@@ -207,12 +208,11 @@ export class BaseExportService {
             ...(automation.trigger?.field_id && { field_id: automation.trigger.field_id }),
             field_name: triggerFieldInfo?.name,
             ...(automation.trigger?.condition && { condition: automation.trigger.condition }),
-            ...(automation.trigger?.table_id && { table_id: automation.trigger.table_id })
+            ...(automation.trigger?.table_name && { table_name: automation.trigger.table_name })
           },
           action: {
             type: automation.action?.type || 'create_record',
-            ...(automation.action?.target_table_id && { target_table_id: automation.action.target_table_id }),
-            ...(targetTable?.name && { target_table_name: targetTable.name }),
+            ...(automation.action?.target_table_name && { target_table_name: automation.action.target_table_name }),
             field_mappings: fieldMappings,
             ...(automation.action?.preserve_original !== undefined && { preserve_original: automation.action.preserve_original }),
             ...(automation.action?.sync_mode && { sync_mode: automation.action.sync_mode }),

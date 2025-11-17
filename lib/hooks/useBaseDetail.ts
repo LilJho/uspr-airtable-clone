@@ -126,18 +126,20 @@ export const useBaseDetail = (baseId: string | null) => {
     }
   }, [baseId]);
 
-  // Load automations
-  const loadAutomations = useCallback(async (tableId: string) => {
+  // Load automations (now base-level, not table-level)
+  const loadAutomations = useCallback(async () => {
+    if (!baseId) return;
+    
     try {
       setError(null);
-      const automationsData = await BaseDetailService.getAutomations(tableId);
+      const automationsData = await BaseDetailService.getAutomations(baseId);
       setAutomations(automationsData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load automations';
       setError(message);
       console.error('Error loading automations:', err);
     }
-  }, []);
+  }, [baseId]);
 
   // Base operations
   const updateBase = useCallback(async (updates: Partial<BaseRow>) => {
@@ -382,14 +384,20 @@ export const useBaseDetail = (baseId: string | null) => {
     }
   }, [baseId, loadBase, loadAllFields]);
 
-  // Load fields, records, and automations when table changes
+  // Load fields and records when table changes
   useEffect(() => {
     if (selectedTableId) {
       loadFields(selectedTableId);
       loadRecords(selectedTableId);
-      loadAutomations(selectedTableId);
     }
-  }, [selectedTableId, loadFields, loadRecords, loadAutomations]);
+  }, [selectedTableId, loadFields, loadRecords]);
+
+  // Load automations when base loads (base-level, not table-level)
+  useEffect(() => {
+    if (baseId) {
+      loadAutomations();
+    }
+  }, [baseId, loadAutomations]);
 
   return {
     // State

@@ -6,6 +6,7 @@ interface CopyAutomationModalProps {
   automation: Automation;
   tables: TableRow[];
   fields: FieldRow[];
+  baseId: string; // Added baseId prop for base-level automations
   onClose: () => void;
   onCopy: (automation: Omit<Automation, 'id' | 'created_at'>, fieldMappings: Array<{ source_field_id: string; target_field_id: string }>) => void;
 }
@@ -14,10 +15,15 @@ export const CopyAutomationModal = ({
   automation,
   tables,
   fields,
+  baseId,
   onClose,
   onCopy
 }: CopyAutomationModalProps) => {
-  const [selectedSourceTableId, setSelectedSourceTableId] = useState(automation.table_id);
+  // Find source table by name from trigger.table_name, or use first table if not specified
+  const initialSourceTable = automation.trigger.table_name
+    ? tables.find(t => t.name === automation.trigger.table_name)
+    : tables[0];
+  const [selectedSourceTableId, setSelectedSourceTableId] = useState(initialSourceTable?.id || '');
   const [selectedTargetTableId, setSelectedTargetTableId] = useState('');
   const [fieldMappings, setFieldMappings] = useState<Array<{ source_field_id: string; target_field_id: string; mapped: boolean }>>([]);
   const [newName, setNewName] = useState(`${automation.name} (Copy)`);
@@ -91,13 +97,22 @@ export const CopyAutomationModal = ({
       return;
     }
 
+    // Get table names for the selected tables
+    const sourceTable = tables.find(t => t.id === selectedSourceTableId);
+    const targetTable = tables.find(t => t.id === selectedTargetTableId);
+    
+    if (!sourceTable || !targetTable) {
+      alert('Invalid table selection. Please try again.');
+      return;
+    }
+
     const copiedAutomation: Omit<Automation, 'id' | 'created_at'> = {
       name: newName,
-      table_id: selectedSourceTableId,
+      base_id: baseId, // Changed from table_id to base_id for base-level automations
       enabled: false, // Start disabled so user can review
       trigger: {
         ...automation.trigger,
-        table_id: selectedSourceTableId,
+        table_name: sourceTable.name, // Changed from table_id to table_name (optional)
         // Reset field_id if the original field doesn't exist in new source table
         field_id: (() => {
           if (!automation.trigger.field_id) return undefined;
@@ -112,7 +127,7 @@ export const CopyAutomationModal = ({
       },
       action: {
         ...automation.action,
-        target_table_id: selectedTargetTableId,
+        target_table_name: targetTable.name, // Changed from target_table_id to target_table_name
         field_mappings: validMappings
       }
     };

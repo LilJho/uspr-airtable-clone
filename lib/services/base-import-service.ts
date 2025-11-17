@@ -119,9 +119,12 @@ export class BaseImportService {
       }
       
       // Map target_table_id using target_table_name
-      const newTargetTableId = automationData.action.target_table_name
-        ? tableNameToId.get(automationData.action.target_table_name)
-        : undefined;
+      if (!automationData.action.target_table_name) {
+        console.warn(`Target table name not specified for automation "${automationData.name}", skipping`);
+        continue;
+      }
+      
+      const newTargetTableId = tableNameToId.get(automationData.action.target_table_name);
       
       if (!newTargetTableId) {
         console.warn(`Target table "${automationData.action.target_table_name}" not found for automation "${automationData.name}", skipping`);
@@ -161,17 +164,17 @@ export class BaseImportService {
         try {
           const newAutomation: Omit<Automation, 'id' | 'created_at'> = {
             name: automationData.name,
-            table_id: tableId,
+            base_id: newBaseId, // Changed from table_id to base_id for base-level automations
             enabled: automationData.enabled !== false,
             trigger: {
               type: automationData.trigger.type,
-              table_id: tableId,
+              ...(automationData.table_name && { table_name: automationData.table_name }), // Optional table_name instead of table_id
               ...(newTriggerFieldId && { field_id: newTriggerFieldId }),
               ...(automationData.trigger.condition && { condition: automationData.trigger.condition })
             },
             action: {
               type: automationData.action.type,
-              target_table_id: newTargetTableId,
+              target_table_name: automationData.action.target_table_name as string, // Changed from target_table_id to target_table_name (validated above)
               field_mappings: newFieldMappings,
               ...(automationData.action.preserve_original !== undefined && { preserve_original: automationData.action.preserve_original }),
               ...(automationData.action.sync_mode && { sync_mode: automationData.action.sync_mode as 'one_way' | 'two_way' }),
@@ -183,7 +186,13 @@ export class BaseImportService {
           
           await BaseDetailService.createAutomation(newAutomation);
         } catch (error) {
-          console.error(`Failed to create automation "${automationData.name}":`, error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorDetails = error instanceof Error ? {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+          } : error;
+          console.error(`Failed to create automation "${automationData.name}":`, errorMessage, errorDetails);
           // Continue with other automations
         }
       } else {
