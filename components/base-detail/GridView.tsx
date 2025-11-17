@@ -2,13 +2,11 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { TableHeader } from "./TableHeader";
 import { TableRow } from "./TableRow";
-import type { RecordRow, FieldRow, SavingCell, TableRow as TableRowType } from "@/lib/types/base-detail";
+import type { RecordRow, FieldRow, SavingCell } from "@/lib/types/base-detail";
 
 interface GridViewProps {
   records: RecordRow[];
   fields: FieldRow[];
-  tables: TableRowType[];
-  selectedTableId: string | null;
   sortFieldId: string | null;
   sortDirection: 'asc' | 'desc';
   savingCell: SavingCell;
@@ -25,8 +23,6 @@ interface GridViewProps {
 export const GridView = ({
   records,
   fields,
-  tables,
-  selectedTableId,
   sortFieldId,
   sortDirection,
   savingCell,
@@ -134,8 +130,6 @@ export const GridView = ({
                   key={record.id}
                   record={record}
                   fields={fields}
-                  tables={tables}
-                  selectedTableId={selectedTableId}
                   rowIndex={index}
                   savingCell={savingCell}
                   isSelected={selectedRows.has(record.id)}

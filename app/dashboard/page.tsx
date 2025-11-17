@@ -83,7 +83,6 @@ export default function Dashboard() {
     editingWorkspaceId,
     editingWorkspaceName,
     workspaceToDelete,
-    setActiveView,
     setCollectionView,
     setSortOption,
     setSelectedWorkspaceId,
@@ -143,10 +142,6 @@ export default function Dashboard() {
     await updateBaseDetails(selectedBase.id, payload);
   }, [selectedBase, updateBaseDetails]);
 
-  const handleDeleteBase = useCallback(async (base: BaseRecord) => {
-    openDeleteBaseModal(base);
-  }, [openDeleteBaseModal]);
-
   const handleDeleteBaseShortcut = useCallback((base: BaseRecord) => {
     openDeleteBaseModal(base);
   }, [openDeleteBaseModal]);
@@ -204,6 +199,20 @@ export default function Dashboard() {
     switchToStarredView();
     loadStarredBases();
   }, [switchToStarredView, loadStarredBases]);
+
+  useEffect(() => {
+    if (basesError) {
+      toast.error(basesError);
+      clearBasesError();
+    }
+  }, [basesError, clearBasesError]);
+
+  useEffect(() => {
+    if (workspacesError) {
+      toast.error(workspacesError);
+      clearWorkspacesError();
+    }
+  }, [workspacesError, clearWorkspacesError]);
 
   // Handle duplicate base
   const handleDuplicateBase = useCallback(async (base: BaseRecord) => {

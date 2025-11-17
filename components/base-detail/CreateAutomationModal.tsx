@@ -72,7 +72,7 @@ export const CreateAutomationModal = ({
         action: { ...prev.action, preserve_original: true }
       }));
     }
-  }, [formData.action.type]);
+  }, [formData.action.preserve_original, formData.action.type]);
 
   // Reset trigger field when source table changes
   useEffect(() => {
@@ -86,7 +86,7 @@ export const CreateAutomationModal = ({
         }));
       }
     }
-  }, [formData.table_id, fields]);
+  }, [fields, formData.table_id, formData.trigger.field_id]);
 
   const sourceFields = fields.filter(f => f.table_id === formData.table_id);
   const targetFields = fields.filter(f => f.table_id === formData.action.target_table_id);

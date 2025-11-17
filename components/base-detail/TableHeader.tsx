@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, MoreVertical, Minus } from "lucide-react";
+import { ChevronDown, Plus, MoreVertical } from "lucide-react";
 import type { FieldRow, SortDirection } from "@/lib/types/base-detail";
 
 interface TableHeaderProps {

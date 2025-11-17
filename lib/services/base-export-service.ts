@@ -1,6 +1,5 @@
-import { supabase } from '../supabaseClient';
 import { BaseDetailService } from './base-detail-service';
-import type { BaseRow, TableRow, FieldRow, RecordRow, Automation } from '../types/base-detail';
+import type { Automation } from '../types/base-detail';
 
 export type ExportedBase = {
   version: string;
@@ -92,7 +91,7 @@ export class BaseExportService {
           allAutomations.push({ automation, tableName: table.name });
         }
       } catch (error) {
-        console.warn(`No automations found for table ${table.name}`);
+        console.warn(`No automations found for table ${table.name}`, error);
       }
     }
     

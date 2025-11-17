@@ -8,7 +8,6 @@ interface KanbanViewProps {
   onUpdateCell: (recordId: string, fieldId: string, value: unknown) => void;
   onDeleteRow: (recordId: string) => void;
   onAddRow: () => void;
-  savingCell: {recordId: string; fieldId: string} | null;
   canDeleteRow?: boolean;
 }
 
@@ -18,7 +17,6 @@ export const KanbanView = ({
   onUpdateCell, 
   onDeleteRow, 
   onAddRow, 
-  savingCell,
   canDeleteRow = true 
 }: KanbanViewProps) => {
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
@@ -152,7 +150,7 @@ export const KanbanView = ({
     }
     
     return groups;
-  }, [records, stackField?.id, stackOptions]);
+  }, [records, stackField, stackOptions]);
 
   // Get other fields to display in cards (excluding the stack field)
   const displayFields = fields.filter(f => stackField && f.id !== stackField.id).slice(0, 3); // Show max 3 fields

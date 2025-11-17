@@ -1,7 +1,6 @@
 "use client";
 import { useMemo, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Crown } from "lucide-react";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { RenameModal } from "@/components/ui/rename-modal";
 
@@ -209,14 +208,6 @@ export default function BaseDetailPage() {
       await updateTable(tableId, { is_master_list: true });
     } catch (err) {
       console.error('Error toggling master list:', err);
-    }
-  };
-
-  const handleRemoveMasterList = async (tableId: string) => {
-    try {
-      await updateTable(tableId, { is_master_list: false });
-    } catch (err) {
-      console.error('Error removing master list:', err);
     }
   };
 
@@ -539,8 +530,6 @@ export default function BaseDetailPage() {
                 <GridView
                   records={records}
                   fields={fields}
-                  tables={tables}
-                  selectedTableId={selectedTableId}
                   sortFieldId={sortFieldId}
                   sortDirection={sortDirection}
                   savingCell={savingCell}
@@ -561,7 +550,6 @@ export default function BaseDetailPage() {
                   onUpdateCell={updateCell}
                   onDeleteRow={deleteRecord}
                   onAddRow={handleAddRow}
-                  savingCell={savingCell}
                   canDeleteRow={can.delete}
                 />
               )}

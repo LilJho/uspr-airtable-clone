@@ -1,13 +1,10 @@
 import { MoreVertical, Trash2 } from "lucide-react";
 import CellEditor from "../../app/bases/[id]/CellEditor";
-import { StatusLabel } from "./StatusLabel";
-import type { RecordRow, FieldRow, SavingCell, TableRow as TableRowType } from "@/lib/types/base-detail";
+import type { RecordRow, FieldRow, SavingCell } from "@/lib/types/base-detail";
 
 interface TableRowProps {
   record: RecordRow;
   fields: FieldRow[];
-  tables: TableRowType[];
-  selectedTableId: string | null;
   rowIndex: number;
   savingCell: SavingCell;
   isSelected: boolean;
@@ -21,8 +18,6 @@ interface TableRowProps {
 export const TableRow = ({
   record,
   fields,
-  tables,
-  selectedTableId,
   rowIndex,
   savingCell,
   isSelected,
@@ -33,14 +28,6 @@ export const TableRow = ({
   onSelectRow
 }: TableRowProps) => {
   const isSaving = savingCell?.recordId === record.id;
-  
-  // Check if we're viewing a master list
-  const selectedTable = tables.find(t => t.id === selectedTableId);
-  const isMasterListView = selectedTable?.is_master_list;
-  
-  // Get the table name for this record
-  const recordTable = tables.find(t => t.id === record.table_id);
-  const tableName = recordTable?.name;
 
   return (
     <div className={`flex border-b border-gray-200 hover:bg-gray-50 group ${isSelected ? 'bg-blue-50' : ''}`}>
@@ -66,24 +53,11 @@ export const TableRow = ({
         const value = record.values?.[field.id];
         const isCellSaving = savingCell?.recordId === record.id && savingCell?.fieldId === field.id;
         
-        // Determine if this field should render as a status label
-        const shouldRenderAsLabel = (fieldName: string, fieldType: string) => {
-          const name = fieldName.toLowerCase();
-          return (
-            (name.includes('urgency') || name.includes('priority')) ||
-            (name.includes('source') && name.includes('lead')) ||
-            (name.includes('status')) ||
-            (name.includes('deal') && name.includes('type')) ||
-            fieldType === 'single_select' || fieldType === 'multi_select'
-          );
-        };
-
         const renderCellContent = () => {
           return (
             <CellEditor
               field={field}
               value={value}
-              recordId={record.id}
               onUpdate={(newValue) => onUpdateCell(record.id, field.id, newValue)}
               isSaving={isCellSaving}
             />

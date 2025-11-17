@@ -9,7 +9,6 @@ import type {
   Automation,
   CreateTableData,
   CreateFieldData,
-  UpdateCellData,
   SavingCell
 } from '../types/base-detail';
 
@@ -50,8 +49,8 @@ export const useBaseDetail = (baseId: string | null) => {
       setTables(tablesData);
       
       // Select first table if available and no table is currently selected
-      if (tablesData.length > 0 && !selectedTableId) {
-        setSelectedTableId(tablesData[0].id);
+      if (tablesData.length > 0) {
+        setSelectedTableId(prev => prev ?? tablesData[0].id);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load base';

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Menu, Grid, Kanban, Plus, Search, Bell, HelpCircle } from "lucide-react";
+import { Menu, Grid, Kanban, Plus, Search } from "lucide-react";
 import type { ViewMode } from "@/lib/types/base-detail";
 
 interface SidebarProps {
@@ -94,18 +94,6 @@ export const Sidebar = ({
         )}
       </div>
 
-      {/* Bottom Icons */}
-      {/* <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-          <HelpCircle size={20} className="text-gray-400" />
-        </button>
-        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-          <Bell size={20} className="text-gray-400" />
-        </button>
-        <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
-          <span className="text-white text-sm font-medium">1</span>
-        </div>
-      </div> */}
     </div>
   );
 };

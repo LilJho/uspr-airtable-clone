@@ -272,7 +272,7 @@ export class BaseService {
         }
       } catch (error) {
         // Continue if no automations found
-        console.warn(`No automations found for table ${originalTable.id}`);
+        console.warn(`No automations found for table ${originalTable.id}`, error);
       }
     }
 

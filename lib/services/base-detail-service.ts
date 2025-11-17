@@ -8,7 +8,6 @@ import type {
   AutomationAction,
   CreateTableData,
   CreateFieldData,
-  UpdateCellData,
   FieldType
 } from '../types/base-detail';
 
@@ -772,7 +771,7 @@ export class BaseDetailService {
                   const field = fields.find(f => f.id === fieldId);
                   if (field && field.options) {
                     // Find the option that matches this value
-                    const optionEntry = Object.entries(field.options).find(([_, optionData]) => {
+                    const optionEntry = Object.entries(field.options).find(([, optionData]) => {
                       const option = optionData as { name: string; color: string };
                       return option.name === value.trim();
                     });
@@ -1010,7 +1009,7 @@ export class BaseDetailService {
   }
 
   // Automation execution
-  static async executeAutomation(automation: Automation, recordId: string, newValues?: Record<string, unknown>): Promise<void> {
+  static async executeAutomation(automation: Automation, recordId: string): Promise<void> {
     console.log('🎯 EXECUTING AUTOMATION:', automation.name, 'enabled:', automation.enabled, 'recordId:', recordId);
     
     if (!automation.enabled) {
@@ -1019,7 +1018,7 @@ export class BaseDetailService {
     }
 
     // Check if record still exists (might have been deleted by another automation)
-    const { data: recordExists, error: recordCheckError } = await supabase
+    const { error: recordCheckError } = await supabase
       .from("records")
       .select("id")
       .eq("id", recordId)
@@ -1458,7 +1457,7 @@ export class BaseDetailService {
           trigger: automation.trigger,
           action: automation.action
         });
-        await this.executeAutomation(automation, recordId, newValues);
+        await this.executeAutomation(automation, recordId);
         console.log('✅ AUTOMATION COMPLETED:', automation.name);
       } catch (error) {
         console.error(`❌ AUTOMATION ERROR: ${automation.name} (${automation.id}):`, error);
