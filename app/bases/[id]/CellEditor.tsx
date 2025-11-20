@@ -20,19 +20,19 @@ export default function CellEditor({
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
   type SelectOptions = { choices?: string[] } | Record<string, { label: string; color: string }>;
-  
+
   const defaultChoiceColors = ['#1E40AF', '#C2410C', '#B91C1C']; // dark blue, dark orange, dark red
-  
+
   const selectChoices = useMemo(() => {
     if (field.type === 'single_select' || field.type === 'multi_select') {
       const options = field.options as SelectOptions | null | undefined;
-      
+
       // Handle format: { optionId: { name: string, color: string } }
       if (options && typeof options === 'object' && !Array.isArray(options)) {
-        const hasValidFormat = Object.values(options).some(val => 
+        const hasValidFormat = Object.values(options).some(val =>
           typeof val === 'object' && val !== null && ('name' in val || 'label' in val)
         );
-        
+
         if (hasValidFormat) {
           return Object.entries(options).map(([key, option]) => {
             const optionData = option as { name?: string; label?: string; color: string };
@@ -44,7 +44,7 @@ export default function CellEditor({
           });
         }
       }
-      
+
       // Handle old format: { choices: string[] }
       const choices = (options as { choices?: string[] })?.choices;
       if (Array.isArray(choices)) {
@@ -59,7 +59,7 @@ export default function CellEditor({
   }, [field]);
   const choiceColors = useMemo(() => {
     if (field.type !== 'single_select' && field.type !== 'multi_select') return {} as Record<string, string>;
-    
+
     const map: Record<string, string> = {};
     selectChoices.forEach((choice) => {
       map[choice.key] = choice.color;
@@ -68,6 +68,7 @@ export default function CellEditor({
   }, [field, selectChoices]);
 
   const hexToRgba = (hex: string, alpha: number): string => {
+    if (!hex) return `rgba(200, 200, 200, ${alpha})`;
     const sanitized = hex.replace('#', '');
     const bigint = parseInt(sanitized, 16);
     const r = (bigint >> 16) & 255;
@@ -91,7 +92,7 @@ export default function CellEditor({
   const formatPhone = (phone: string): string => {
     // Remove all non-digit characters
     const digitsOnly = phone.replace(/\D/g, '');
-    
+
     // Format as US phone number if 10 digits, otherwise return as-is with dashes
     if (digitsOnly.length === 10) {
       return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
@@ -153,14 +154,14 @@ export default function CellEditor({
   if (field.type === 'single_select') {
     const selectedColor = value == null ? undefined : choiceColors[String(value)];
     const selectedChoice = selectChoices.find(choice => choice.key === String(value));
-    
+
     return (
       <select
         className={`${centeredInputClass} cursor-pointer rounded-sm`}
         value={value == null ? '' : String(value)}
         onChange={(e) => onUpdate(e.target.value || null)}
         disabled={isSaving}
-        style={selectedColor ? { 
+        style={selectedColor ? {
           backgroundColor: selectedColor,
           borderColor: selectedColor,
           color: 'white'
@@ -168,9 +169,9 @@ export default function CellEditor({
       >
         <option value="">Select...</option>
         {selectChoices.map((choice) => (
-          <option 
-            key={choice.key} 
-            value={choice.key} 
+          <option
+            key={choice.key}
+            value={choice.key}
             style={{ backgroundColor: hexToRgba(choice.color, 0.18) }}
           >
             {choice.label}
@@ -182,7 +183,7 @@ export default function CellEditor({
 
   if (field.type === 'multi_select') {
     const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
-    
+
     return (
       <div className="w-full min-h-[32px] px-2 py-1 text-center">
         <select
@@ -201,16 +202,16 @@ export default function CellEditor({
         >
           <option value="">Add option...</option>
           {selectChoices.map((choice) => (
-            <option 
-              key={choice.key} 
-              value={choice.key} 
+            <option
+              key={choice.key}
+              value={choice.key}
               style={{ backgroundColor: hexToRgba(choice.color, 0.18) }}
             >
               {choice.label}
             </option>
           ))}
         </select>
-        
+
         {selectedValues.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1 justify-center">
             {selectedValues.map((val) => {
@@ -315,21 +316,19 @@ export default function CellEditor({
 
   if (field.type === 'checkbox') {
     const isChecked = value === true || value === 'true' || value === 1 || value === '1';
-    
+
     return (
       <div className="flex items-center justify-start h-full">
         <button
           type="button"
           onClick={() => onUpdate(!isChecked)}
           disabled={isSaving}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${
-            isChecked ? 'bg-blue-600' : 'bg-gray-300'
-          }`}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${isChecked ? 'bg-blue-600' : 'bg-gray-300'
+            }`}
         >
           <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-              isChecked ? 'translate-x-6' : 'translate-x-1'
-            }`}
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isChecked ? 'translate-x-6' : 'translate-x-1'
+              }`}
           />
         </button>
       </div>
