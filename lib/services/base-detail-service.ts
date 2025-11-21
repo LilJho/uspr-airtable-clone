@@ -705,9 +705,43 @@ export class BaseDetailService {
     const recordsToCreate: Array<{ table_id: string; values: Record<string, unknown> }> = [];
     const errors: string[] = [];
 
+    // Check if table is masterlist
+    const { data: tableData, error: tableCheckError } = await supabase
+      .from("tables")
+      .select("is_master_list, base_id")
+      .eq("id", tableId)
+      .single();
+    
+    if (tableCheckError) {
+      throw new Error(`Failed to verify table: ${tableCheckError.message}`);
+    }
+    
+    const isMasterlist = tableData?.is_master_list || false;
+    const baseId = tableData?.base_id;
+    
+    if (!baseId) {
+      throw new Error('Table does not have a base_id');
+    }
+
     // Get existing fields and their types
     const fields = await this.getFields(tableId);
     const fieldTypeMap = new Map(fields.map(f => [f.id, f.type]));
+    
+    // If importing to masterlist, get all fields from the base to find existing fields by name
+    let allBaseFields: FieldRow[] = [];
+    const fieldNameToIdMap = new Map<string, string>();
+    
+    if (isMasterlist) {
+      console.log('📋 Importing to masterlist - will map to existing fields by name across the base');
+      allBaseFields = await this.getAllFields(baseId);
+      // Create a map of field name -> field ID (use first match if duplicate names exist)
+      for (const field of allBaseFields) {
+        if (!fieldNameToIdMap.has(field.name)) {
+          fieldNameToIdMap.set(field.name, field.id);
+        }
+      }
+      console.log(`📋 Found ${allBaseFields.length} fields across the base (${fieldNameToIdMap.size} unique names)`);
+    }
     
     // Create new fields for mappings that specify field creation
     const fieldsToCreate = new Map<string, { fieldType: string, fieldName: string, options?: Record<string, unknown> }>();
@@ -833,8 +867,152 @@ export class BaseDetailService {
       }
     }
     
-    // Create all new fields
-    console.log('🔧 CREATING FIELDS:', fieldsToCreate.size, 'fields to create');
+    // Create all new fields (or map to existing fields if masterlist)
+    console.log('🔧 PROCESSING FIELDS:', fieldsToCreate.size, 'fields to process');
+    console.log('🔧 Is masterlist?', isMasterlist);
+    console.log('🔧 Total fieldMappings with type "create":', Object.entries(fieldMappings).filter(([_, m]) => typeof m === 'object' && m.type === 'create').length);
+    console.log('🔧 Fields to create:', Array.from(fieldsToCreate.entries()).map(([col, config]) => `${col} -> ${config.fieldName}`));
+    
+    if (fieldsToCreate.size === 0) {
+      console.warn('⚠️ WARNING: fieldsToCreate is empty! This means no fields were added to the map. Check fieldMappings.');
+      console.log('📋 Field mappings sample:', Object.entries(fieldMappings).slice(0, 3).map(([k, v]) => ({ key: k, value: v })));
+    }
+    
+    if (isMasterlist) {
+      // For masterlist, map to existing fields by name, or create in first non-masterlist table
+      console.log('📋 Masterlist import: Mapping to existing fields or creating in first non-masterlist table');
+      
+      // Find the first non-masterlist table to create fields in
+      let tables = await this.getTables(baseId);
+      let firstNonMasterlistTable = tables.find(t => !t.is_master_list);
+      let targetTableIdForNewFields = firstNonMasterlistTable?.id;
+      
+      if (!targetTableIdForNewFields) {
+        // No non-masterlist table exists - create one automatically for field creation
+        console.log('📋 No non-masterlist table found - creating one automatically for field creation');
+        try {
+          // Find the highest order_index to place the new table after existing tables
+          const maxOrderIndex = tables.length > 0 
+            ? Math.max(...tables.map(t => t.order_index || 0))
+            : -1;
+          
+          // Create table directly with is_master_list set to false
+          const { data: newTableData, error: tableError } = await supabase
+            .from("tables")
+            .insert({
+              base_id: baseId,
+              name: 'Data Table', // Default name for the table
+              order_index: maxOrderIndex + 1,
+              is_master_list: false
+            })
+            .select("id, base_id, name, order_index, is_master_list")
+            .single();
+          
+          if (tableError || !newTableData) {
+            throw new Error(tableError?.message || 'Failed to create table');
+          }
+          
+          const newTable = newTableData as TableRow;
+          
+          targetTableIdForNewFields = newTable.id;
+          firstNonMasterlistTable = newTable;
+          
+          // Refresh tables list
+          tables = await this.getTables(baseId);
+          
+          console.log(`✅ Created new table "${newTable.name}" (${targetTableIdForNewFields}) for field creation`);
+        } catch (error) {
+          const errorMsg = `❌ CRITICAL: Failed to create non-masterlist table for field creation: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          console.error(errorMsg);
+          errors.push(errorMsg);
+        }
+      } else {
+        console.log(`📋 Will create new fields in existing table: "${firstNonMasterlistTable?.name}" (${targetTableIdForNewFields})`);
+      }
+      
+      // Process fields sequentially to ensure proper tracking
+      console.log(`🔄 Starting field processing loop with ${fieldsToCreate.size} fields`);
+      let processedCount = 0;
+      
+      for (const [csvColumn, fieldConfig] of fieldsToCreate) {
+        processedCount++;
+        console.log(`[${processedCount}/${fieldsToCreate.size}] Processing field: "${fieldConfig.fieldName}" for column: "${csvColumn}"`);
+        const existingFieldId = fieldNameToIdMap.get(fieldConfig.fieldName);
+        
+        if (existingFieldId) {
+          // Field already exists in the base - use it
+          const existingField = allBaseFields.find(f => f.id === existingFieldId);
+          if (existingField) {
+            console.log(`✅ Using existing field "${fieldConfig.fieldName}": ${existingFieldId}`);
+            createdFieldIds.set(csvColumn, existingFieldId);
+            fieldTypeMap.set(existingFieldId, existingField.type);
+            
+            // Add to fields array if not already there
+            if (!fields.find(f => f.id === existingFieldId)) {
+              fields.push(existingField);
+            }
+          } else {
+            console.warn(`⚠️ Found field ID ${existingFieldId} for "${fieldConfig.fieldName}" but field not found in allBaseFields`);
+            errors.push(`Field "${fieldConfig.fieldName}" exists but could not be accessed`);
+          }
+        } else {
+          // Field doesn't exist - create it in first non-masterlist table
+          if (targetTableIdForNewFields) {
+            try {
+              console.log(`🔧 Creating field "${fieldConfig.fieldName}" (type: ${fieldConfig.fieldType}) in table "${firstNonMasterlistTable?.name}" (masterlist import)`);
+              
+              // Get fields in target table to determine order_index
+              const targetTableFields = await this.getFields(targetTableIdForNewFields);
+              
+              const newField = await this.createField({
+                name: fieldConfig.fieldName,
+                type: fieldConfig.fieldType as FieldType,
+                table_id: targetTableIdForNewFields,
+                order_index: targetTableFields.length,
+                options: fieldConfig.options
+              });
+              
+              console.log(`✅ Field created in "${firstNonMasterlistTable?.name}": "${fieldConfig.fieldName}" (${newField.id})`);
+              
+              // CRITICAL: Set the field ID using csvColumn as the key
+              createdFieldIds.set(csvColumn, newField.id);
+              fieldTypeMap.set(newField.id, newField.type);
+              
+              // Verify the field ID was set correctly
+              const verifyId = createdFieldIds.get(csvColumn);
+              if (!verifyId || verifyId !== newField.id) {
+                console.error(`❌ CRITICAL: Field ID not set correctly for "${csvColumn}": expected ${newField.id}, got ${verifyId || 'undefined'}`);
+              } else {
+                console.log(`✅ Verified: createdFieldIds["${csvColumn}"] = ${verifyId}`);
+              }
+              
+              // Add to allBaseFields so subsequent checks can find it
+              allBaseFields.push(newField);
+              fieldNameToIdMap.set(fieldConfig.fieldName, newField.id);
+              
+              // Add to fields array for masterlist view
+              if (!fields.find(f => f.id === newField.id)) {
+                fields.push(newField);
+              }
+            } catch (error) {
+              console.error(`❌ Failed to create field "${fieldConfig.fieldName}" for column "${csvColumn}":`, error);
+              const errorMsg = `Failed to create field "${fieldConfig.fieldName}" in table "${firstNonMasterlistTable?.name}": ${error instanceof Error ? error.message : 'Unknown error'}`;
+              errors.push(errorMsg);
+              // Don't add to createdFieldIds - validation will catch this
+            }
+          } else {
+            // No non-masterlist table available
+            console.error(`❌ CRITICAL: Field "${fieldConfig.fieldName}" cannot be created - no non-masterlist table available`);
+            console.error(`❌ Available tables:`, tables.map(t => ({ name: t.name, is_master_list: t.is_master_list })));
+            errors.push(`Field "${fieldConfig.fieldName}" does not exist. Please create a non-masterlist table first to enable field creation during masterlist import.`);
+          }
+        }
+      }
+      
+      console.log(`✅ Completed field processing loop. Processed ${processedCount} fields.`);
+      console.log(`📊 createdFieldIds now has ${createdFieldIds.size} entries`);
+    } else {
+      // For non-masterlist tables, create new fields as usual
     for (const [csvColumn, fieldConfig] of fieldsToCreate) {
       try {
         console.log(`🔧 Creating field: ${fieldConfig.fieldName} (${fieldConfig.fieldType}) for column: ${csvColumn}`);
@@ -853,6 +1031,7 @@ export class BaseDetailService {
       } catch (error) {
         console.error(`❌ Failed to create field "${fieldConfig.fieldName}":`, error);
         errors.push(`Failed to create field "${fieldConfig.fieldName}" for column "${csvColumn}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
       }
     }
     
@@ -860,6 +1039,31 @@ export class BaseDetailService {
     console.log('📊 Total fields after creation:', fields.length);
     console.log('📊 Created field IDs map:', Object.fromEntries(createdFieldIds));
     console.log('📊 Field type map:', Object.fromEntries(fieldTypeMap));
+    
+    // Validate that all fields to create have been successfully mapped/created
+    // This ensures we don't start processing rows with missing field IDs
+    const missingFieldIds: string[] = [];
+    for (const [csvColumn, mapping] of Object.entries(fieldMappings)) {
+      if (typeof mapping === 'object' && mapping.type === 'create') {
+        const fieldId = createdFieldIds.get(csvColumn);
+        if (!fieldId) {
+          missingFieldIds.push(csvColumn);
+          console.error(`❌ CRITICAL: Field "${mapping.fieldName}" for column "${csvColumn}" was not created or mapped`);
+        }
+      }
+    }
+    
+    // If any required fields are missing, throw an error before processing rows
+    if (missingFieldIds.length > 0) {
+      const missingFieldNames = missingFieldIds.map(col => {
+        const mapping = fieldMappings[col];
+        return typeof mapping === 'object' && mapping.type === 'create' ? mapping.fieldName : col;
+      });
+      const errorMessage = `Cannot proceed with import: ${missingFieldIds.length} field(s) failed to create: ${missingFieldNames.join(', ')}. Please check the errors above.`;
+      console.error('❌', errorMessage);
+      errors.push(errorMessage);
+      return { imported: 0, errors };
+    }
 
     dataRows.forEach((row, rowIndex) => {
       try {
@@ -1935,7 +2139,7 @@ export class BaseDetailService {
         let finalTargetValues = targetValues; // Keep track of what was actually saved
         
         if (existingTargetRecord) {
-          // Update existing record in target table
+        // Update existing record in target table
           console.log('💾 Updating existing record in target table (record already exists)');
           const { error: updateError } = await supabase
             .from("records")
@@ -1947,7 +2151,7 @@ export class BaseDetailService {
             console.error('❌ Failed to update record in target table:', updateError);
             throw updateError;
           }
-          console.log('✅ Record updated in target table');
+        console.log('✅ Record updated in target table');
         } else {
           // Create record in target table with same ID
           console.log('💾 Creating record in target table with same ID');
@@ -2035,18 +2239,18 @@ export class BaseDetailService {
         // Delete from source table (if not preserving original)
         if (!action.preserve_original) {
           console.log('🗑️ Deleting record from source table:', sourceTableId);
-          const { error: deleteError } = await supabase
-            .from("records")
-            .delete()
-            .eq("id", recordId)
-            .eq("table_id", sourceTableId);
-          
-          if (deleteError) {
+      const { error: deleteError } = await supabase
+        .from("records")
+        .delete()
+        .eq("id", recordId)
+        .eq("table_id", sourceTableId);
+
+      if (deleteError) {
             console.error('❌ Failed to delete record from source table:', deleteError);
             throw deleteError;
           }
           console.log('✅ Record deleted from source table');
-        } else {
+    } else {
           console.log('ℹ️ Preserve original is true - keeping record in source table');
         }
         
