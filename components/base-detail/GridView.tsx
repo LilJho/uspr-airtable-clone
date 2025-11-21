@@ -7,6 +7,7 @@ import type { RecordRow, FieldRow, SavingCell, TableRow as TableRowType } from "
 interface GridViewProps {
   records: RecordRow[];
   fields: FieldRow[];
+  allFields?: FieldRow[]; // All fields from all tables (for masterlist matching)
   tables: TableRowType[];
   selectedTableId: string | null;
   sortFieldId: string | null;
@@ -25,6 +26,7 @@ interface GridViewProps {
 export const GridView = ({
   records,
   fields,
+  allFields, // All fields from all tables (for masterlist matching)
   tables,
   selectedTableId,
   sortFieldId,
@@ -134,6 +136,7 @@ export const GridView = ({
                   key={record.id}
                   record={record}
                   fields={fields}
+                  allFields={allFields} // Pass all fields for masterlist field matching
                   tables={tables}
                   selectedTableId={selectedTableId}
                   rowIndex={index}

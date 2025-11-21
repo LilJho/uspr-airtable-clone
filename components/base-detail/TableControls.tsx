@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -34,6 +34,7 @@ interface TableControlsProps {
   onSort: () => void;
   onColor: () => void;
   onShare: () => void;
+  onDeleteAllFields?: () => void;
   canDeleteTable?: boolean;
 }
 
@@ -53,6 +54,7 @@ export const TableControls = ({
   onSort,
   onColor,
   onShare,
+  onDeleteAllFields,
   canDeleteTable = true
 }: TableControlsProps) => {
   const [contextMenu, setContextMenu] = useState<{
@@ -61,11 +63,37 @@ export const TableControls = ({
     y: number;
   } | null>(null);
 
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+
   const [draggedTableId, setDraggedTableId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Sort tables by order_index to ensure consistent display order
   const sortedTables = [...tables].sort((a, b) => a.order_index - b.order_index);
+
+  // Close settings menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        settingsMenuRef.current &&
+        settingsButtonRef.current &&
+        !settingsMenuRef.current.contains(event.target as Node) &&
+        !settingsButtonRef.current.contains(event.target as Node)
+      ) {
+        setSettingsMenuOpen(false);
+      }
+    };
+
+    if (settingsMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [settingsMenuOpen]);
 
   const handleTableContextMenu = (e: React.MouseEvent, tableId: string) => {
     e.preventDefault();
@@ -226,9 +254,42 @@ export const TableControls = ({
           >
             <Upload size={16} className="text-gray-400" />
           </button>
-          <button type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <Settings size={16} className="text-gray-400" />
-          </button>
+          <div className="relative">
+            <button
+              ref={settingsButtonRef}
+              type="button"
+              onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Settings"
+            >
+              <Settings size={16} className="text-gray-400" />
+            </button>
+            {settingsMenuOpen && onDeleteAllFields && (
+              <>
+                {/* Backdrop to close menu */}
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setSettingsMenuOpen(false)}
+                />
+                <div
+                  ref={settingsMenuRef}
+                  className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-50"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteAllFields();
+                      setSettingsMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <Trash2 size={14} />
+                    <span>Delete All Fields</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

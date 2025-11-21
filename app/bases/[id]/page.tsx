@@ -27,6 +27,7 @@ import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
 import { RoleTagsManager } from "@/components/base-detail/RoleTagsManager";
 import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
 import { DeleteFieldModal } from "@/components/base-detail/DeleteFieldModal";
+import { DeleteAllFieldsModal } from "@/components/base-detail/DeleteAllFieldsModal";
 import { ExportBaseModal } from "@/components/base-detail/ExportBaseModal";
 
 // Types
@@ -61,6 +62,7 @@ export default function BaseDetailPage() {
     createField,
     updateField,
     deleteField,
+    deleteAllFields,
     updateCell,
     deleteRecord,
     bulkDeleteRecords,
@@ -119,6 +121,11 @@ export default function BaseDetailPage() {
   const [isDeleteFieldModalOpen, setIsDeleteFieldModalOpen] = useState(false);
   const openDeleteFieldModal = () => setIsDeleteFieldModalOpen(true);
   const closeDeleteFieldModal = () => setIsDeleteFieldModalOpen(false);
+
+  // Add state for delete all fields modal
+  const [isDeleteAllFieldsModalOpen, setIsDeleteAllFieldsModalOpen] = useState(false);
+  const openDeleteAllFieldsModal = () => setIsDeleteAllFieldsModalOpen(true);
+  const closeDeleteAllFieldsModal = () => setIsDeleteAllFieldsModalOpen(false);
   
   const { contextMenu, setContextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const { role, can } = useRole({ baseId });
@@ -336,6 +343,19 @@ export default function BaseDetailPage() {
     }
   };
 
+  const handleDeleteAllFields = async () => {
+    if (!selectedTableId) return;
+
+    try {
+      await deleteAllFields(selectedTableId);
+      // The deleteAllFields function already reloads fields, so we just need to reload records
+      await loadRecords(selectedTableId);
+      closeDeleteAllFieldsModal();
+    } catch (err) {
+      console.error('Error deleting all fields:', err);
+    }
+  };
+
   const handleImportCsv = async (data: { 
     file: File; 
     fieldMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }> 
@@ -526,6 +546,7 @@ export default function BaseDetailPage() {
             onSort={() => {}} // TODO: Implement
             onColor={() => {}} // TODO: Implement
             onShare={() => {}} // TODO: Implement
+            onDeleteAllFields={openDeleteAllFieldsModal}
             canDeleteTable={can.delete}
           />
         )}
@@ -539,6 +560,7 @@ export default function BaseDetailPage() {
                 <GridView
                   records={records}
                   fields={fields}
+                  allFields={allFields}
                   tables={tables}
                   selectedTableId={selectedTableId}
                   sortFieldId={sortFieldId}
@@ -693,6 +715,15 @@ export default function BaseDetailPage() {
         onClose={closeDeleteFieldModal}
         onDeleteField={handleDeleteFieldConfirm}
         field={contextMenu?.data && contextMenu.type === 'field' ? (contextMenu.data as FieldRow) : null}
+      />
+
+      {/* Delete All Fields Modal */}
+      <DeleteAllFieldsModal
+        isOpen={isDeleteAllFieldsModalOpen}
+        onClose={closeDeleteAllFieldsModal}
+        onDeleteAllFields={handleDeleteAllFields}
+        fieldCount={fields.length}
+        tableName={tables.find(t => t.id === selectedTableId)?.name || 'this table'}
       />
 
       {/* Export Base Modal */}

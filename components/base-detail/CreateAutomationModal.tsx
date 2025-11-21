@@ -22,6 +22,19 @@ export const CreateAutomationModal = ({
   onSave,
   onFieldCreated
 }: CreateAutomationModalProps) => {
+  // Initialize form data - if automation has field_id but not field_name, populate field_name
+  const getInitialFieldName = () => {
+    if (automation?.trigger.field_name) {
+      return automation.trigger.field_name;
+    }
+    // If only field_id exists, find the field and get its name
+    if (automation?.trigger.field_id) {
+      const field = fields.find(f => f.id === automation.trigger.field_id);
+      return field?.name || undefined;
+    }
+    return undefined;
+  };
+
   const [formData, setFormData] = useState({
     name: automation?.name || '',
     base_id: automation?.base_id || baseId,
@@ -29,7 +42,8 @@ export const CreateAutomationModal = ({
     trigger: {
       type: automation?.trigger.type || 'field_change' as const,
       table_name: automation?.trigger.table_name || '', // Optional: if empty, applies to all tables
-      field_id: automation?.trigger.field_id || '',
+      field_id: automation?.trigger.field_id || undefined, // Keep for backward compatibility
+      field_name: getInitialFieldName(), // Field name for cross-table support
       condition: automation?.trigger.condition || {
         operator: 'equals' as const,
         value: ''
@@ -74,31 +88,62 @@ export const CreateAutomationModal = ({
     }
   }, [formData.action.type]);
 
+  // Get unique field names across all tables for field selection
+  // When "All tables in base" is selected, show unique field names (not per-table fields)
+  const uniqueFieldNames = new Set<string>();
+  const fieldsByName = new Map<string, FieldRow>(); // Store first occurrence of each field name
+  
+  for (const field of fields) {
+    const fieldTable = tables.find(t => t.id === field.table_id);
+    // Skip masterlist's own fields when showing unique fields
+    if (!fieldTable?.is_master_list && !uniqueFieldNames.has(field.name)) {
+      uniqueFieldNames.add(field.name);
+      fieldsByName.set(field.name, field);
+    }
+  }
+  
+  // Get source fields - if table_name is specified, filter by that table; otherwise show unique field names
+  const sourceTable = formData.trigger.table_name 
+    ? tables.find(t => t.name === formData.trigger.table_name)
+    : null;
+  
+  // For field selection, show unique field names when "All tables" is selected
+  // This allows selecting a field once and having it work across all tables
+  const sourceFields = sourceTable 
+    ? (sourceTable.is_master_list 
+        ? Array.from(fieldsByName.values()) // Show unique field names
+        : fields.filter(f => f.table_id === sourceTable.id))
+    : Array.from(fieldsByName.values()); // Show unique field names when "All tables" is selected
+
   // Reset trigger field when source table changes
   useEffect(() => {
-    if (formData.trigger.table_name && formData.trigger.field_id) {
-      // Find table by name
+    // If field_name is set, find the field and update field_id for backward compatibility
+    if (formData.trigger.field_name) {
+      const matchingField = sourceFields.find(f => f.name === formData.trigger.field_name);
+      if (matchingField && matchingField.id !== formData.trigger.field_id) {
+        setFormData(prev => ({
+          ...prev,
+          trigger: { 
+            ...prev.trigger, 
+            field_id: matchingField.id // Update field_id for backward compatibility
+          }
+        }));
+      }
+    } else if (formData.trigger.table_name && formData.trigger.field_id) {
+      // Legacy: Reset field_id if table changes and field doesn't exist
       const sourceTable = tables.find(t => t.name === formData.trigger.table_name);
       if (sourceTable) {
-        const sourceFields = fields.filter(f => f.table_id === sourceTable.id);
-        const fieldExists = sourceFields.find(f => f.id === formData.trigger.field_id);
+        const tableFields = fields.filter(f => f.table_id === sourceTable.id);
+        const fieldExists = tableFields.find(f => f.id === formData.trigger.field_id);
         if (!fieldExists) {
           setFormData(prev => ({
             ...prev,
-            trigger: { ...prev.trigger, field_id: '' }
+            trigger: { ...prev.trigger, field_id: undefined }
           }));
         }
       }
     }
-  }, [formData.trigger.table_name, fields, tables]);
-
-  // Get source fields - if table_name is specified, filter by that table; otherwise show all fields
-  const sourceTable = formData.trigger.table_name 
-    ? tables.find(t => t.name === formData.trigger.table_name)
-    : null;
-  const sourceFields = sourceTable 
-    ? fields.filter(f => f.table_id === sourceTable.id)
-    : fields; // Show all fields if no table specified
+  }, [formData.trigger.table_name, formData.trigger.field_name, formData.trigger.field_id, fields, tables, sourceFields]);
 
   // Get target fields - filter by target table name
   const targetTable = formData.action.target_table_name
@@ -109,7 +154,10 @@ export const CreateAutomationModal = ({
     : [];
   
   // Get the selected field to determine appropriate operators
-  const selectedField = sourceFields.find(f => f.id === formData.trigger.field_id);
+  // Support both field_id (backward compatibility) and field_name (new way)
+  const selectedField = formData.trigger.field_name
+    ? sourceFields.find(f => f.name === formData.trigger.field_name)
+    : sourceFields.find(f => f.id === formData.trigger.field_id);
   const isNumericField = selectedField?.type === 'number';
   const isTextField = selectedField?.type === 'text' || selectedField?.type === 'email';
 
@@ -127,7 +175,7 @@ export const CreateAutomationModal = ({
       newErrors.target_table_name = 'Target table is required';
     }
 
-    if (formData.trigger.type === 'field_change' && !formData.trigger.field_id) {
+    if (formData.trigger.type === 'field_change' && !formData.trigger.field_name && !formData.trigger.field_id) {
       newErrors.trigger_field = 'Field is required for field change trigger';
     }
 
@@ -153,7 +201,8 @@ export const CreateAutomationModal = ({
       trigger: {
         type: formData.trigger.type,
         table_name: formData.trigger.table_name || undefined, // Optional - if empty, applies to all tables
-        field_id: formData.trigger.field_id || undefined,
+        field_id: formData.trigger.field_id || undefined, // Keep for backward compatibility
+        field_name: formData.trigger.field_name || undefined, // Field name for cross-table support
         condition: formData.trigger.condition.operator && formData.trigger.condition.value 
           ? formData.trigger.condition 
           : undefined
@@ -211,6 +260,12 @@ export const CreateAutomationModal = ({
       return;
     }
 
+    // Prevent creating fields in masterlist - masterlist should only show fields from other tables
+    if (targetTable.is_master_list) {
+      setErrors({ field_creation: 'Cannot create fields in masterlist. Masterlist automatically shows fields from all tables.' });
+      return;
+    }
+
     try {
       const newField = await BaseDetailService.createField({
         name: newFieldData.name,
@@ -249,41 +304,97 @@ export const CreateAutomationModal = ({
       return;
     }
 
+    // Prevent creating fields in masterlist - masterlist should only show fields from other tables
+    if (targetTable.is_master_list) {
+      setErrors({ field_mapping: 'Cannot create fields in masterlist. Masterlist automatically shows fields from all tables.' });
+      return;
+    }
+
     setIsMappingAllFields(true);
     setErrors({});
 
     try {
       const newMappings: { source_field_id: string; target_field_id: string }[] = [];
-      const fieldsToCreate: { name: string; type: FieldType; order_index: number }[] = [];
+      const fieldsToCreate: { name: string; type: FieldType; order_index: number; options?: Record<string, unknown> }[] = [];
 
       // Get all source fields (from specified table or all fields if no table specified)
+      // Note: sourceFields is already filtered to exclude masterlist's own fields if source is masterlist
       const allSourceFields = sourceFields;
       
+      // Track unique field names to prevent duplicates when mapping from multiple tables
+      const processedFieldNames = new Set<string>();
+      
       for (const sourceField of allSourceFields) {
-        // Check if a target field with the same name already exists
+        // No need to skip masterlist fields here - sourceFields is already filtered correctly
+        
+        // Skip if we've already processed a field with this name (to avoid duplicates from multiple tables)
+        if (processedFieldNames.has(sourceField.name)) {
+          continue;
+        }
+        
+        // Check if a target field with the same name already exists in the target table
         const targetField = targetFields.find(f => f.name === sourceField.name);
         
+        // Only create field if it doesn't exist in target table
         if (!targetField) {
           // Create a new field in the target table
-          fieldsToCreate.push({
+          // For single_select and multi_select fields, preserve the options from source field
+          const fieldToCreate: { name: string; type: FieldType; order_index: number; options?: Record<string, unknown> } = {
             name: sourceField.name,
             type: sourceField.type,
             order_index: targetFields.length + fieldsToCreate.length
-          });
+          };
+          
+          // Preserve options for select fields (single_select, multi_select)
+          if ((sourceField.type === 'single_select' || sourceField.type === 'multi_select') && sourceField.options) {
+            fieldToCreate.options = sourceField.options;
+          }
+          
+          fieldsToCreate.push(fieldToCreate);
         }
+        
+        // Mark this field name as processed
+        processedFieldNames.add(sourceField.name);
       }
 
-      // Create all new fields
+      // Create all new fields - ensure we never create fields in masterlist
       const createdFields: FieldRow[] = [];
       for (const fieldData of fieldsToCreate) {
         try {
-          const newField = await BaseDetailService.createField({
+          // Double-check that we're not creating fields in masterlist
+          if (targetTable.is_master_list) {
+            console.warn('Skipping field creation in masterlist:', fieldData.name);
+            continue; // Skip this field - should not happen due to earlier check
+          }
+          
+          // Build field creation data, including options for select fields
+          const createFieldData: {
+            name: string;
+            type: FieldType;
+            table_id: string;
+            order_index: number;
+            options?: Record<string, unknown>;
+          } = {
             name: fieldData.name,
             type: fieldData.type,
-            table_id: targetTable.id,
+            table_id: targetTable.id, // This should NEVER be masterlist id
             order_index: fieldData.order_index
-          });
+          };
+          
+          // Include options if they exist (for single_select, multi_select fields)
+          if (fieldData.options) {
+            createFieldData.options = fieldData.options;
+          }
+          
+          const newField = await BaseDetailService.createField(createFieldData);
           createdFields.push(newField);
+          console.log('✅ Created field in target table:', { 
+            name: newField.name, 
+            type: newField.type,
+            table_id: newField.table_id, 
+            table_name: targetTable.name,
+            hasOptions: !!newField.options
+          });
         } catch (error) {
           console.error('Error creating field:', error);
           setErrors({ field_creation: 'Failed to create some fields' });
@@ -298,7 +409,17 @@ export const CreateAutomationModal = ({
       }
 
       // Create mappings for all source fields
+      // Use the same processedFieldNames to ensure we only map once per field name
+      const mappedFieldNames = new Set<string>();
+      
       for (const sourceField of allSourceFields) {
+        // No need to skip masterlist fields here - sourceFields is already filtered correctly
+        
+        // Skip if we've already mapped a field with this name (to avoid duplicate mappings)
+        if (mappedFieldNames.has(sourceField.name)) {
+          continue;
+        }
+        
         // Find the corresponding target field (existing or newly created)
         const targetField = targetFields.find(f => f.name === sourceField.name) || 
                          createdFields.find(f => f.name === sourceField.name);
@@ -308,6 +429,8 @@ export const CreateAutomationModal = ({
             source_field_id: sourceField.id,
             target_field_id: targetField.id
           });
+          // Mark this field name as mapped
+          mappedFieldNames.add(sourceField.name);
         }
       }
 
@@ -426,11 +549,19 @@ export const CreateAutomationModal = ({
                       Field *
                     </label>
                     <select
-                      value={formData.trigger.field_id}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        trigger: { ...prev.trigger, field_id: e.target.value }
-                      }))}
+                      value={formData.trigger.field_name || formData.trigger.field_id || ''}
+                      onChange={(e) => {
+                        const selectedFieldName = e.target.value;
+                        const selectedField = sourceFields.find(f => f.name === selectedFieldName);
+                        setFormData(prev => ({ 
+                          ...prev, 
+                          trigger: { 
+                            ...prev.trigger, 
+                            field_name: selectedFieldName || undefined,
+                            field_id: selectedField?.id || undefined // Keep for backward compatibility
+                          }
+                        }));
+                      }}
                       className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                         errors.trigger_field ? 'border-red-500' : 'border-gray-300'
                       }`}
@@ -440,10 +571,15 @@ export const CreateAutomationModal = ({
                         <option value="" disabled>No fields available{formData.trigger.table_name ? ' for selected table' : ''}</option>
                       ) : (
                         sourceFields.map(field => {
+                          // When showing unique field names, just show the field name
+                          // When showing table-specific fields, show with table name
                           const fieldTable = tables.find(t => t.id === field.table_id);
+                          const displayName = formData.trigger.table_name && !sourceTable?.is_master_list
+                            ? `${field.name}${fieldTable ? ` (${fieldTable.name})` : ''}`
+                            : field.name; // Just show field name when "All tables" is selected
                           return (
-                            <option key={field.id} value={field.id}>
-                              {field.name}{fieldTable ? ` (${fieldTable.name})` : ''}
+                            <option key={field.id} value={field.name}>
+                              {displayName}
                             </option>
                           );
                         })

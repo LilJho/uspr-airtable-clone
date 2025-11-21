@@ -40,7 +40,8 @@ export type RecordRow = {
 export type AutomationTrigger = {
   type: 'field_change' | 'record_created' | 'record_updated';
   table_name?: string; // Optional: if not specified, applies to all tables in base
-  field_id?: string;
+  field_id?: string; // Deprecated: use field_name instead for cross-table support
+  field_name?: string; // Field name (works across all tables with this field name)
   condition?: {
     operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal';
     value: string | number;

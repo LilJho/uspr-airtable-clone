@@ -6,6 +6,7 @@ import type { RecordRow, FieldRow, SavingCell, TableRow as TableRowType } from "
 interface TableRowProps {
   record: RecordRow;
   fields: FieldRow[];
+  allFields?: FieldRow[]; // All fields from all tables (for masterlist matching)
   tables: TableRowType[];
   selectedTableId: string | null;
   rowIndex: number;
@@ -21,6 +22,7 @@ interface TableRowProps {
 export const TableRow = ({
   record,
   fields,
+  allFields = fields, // Default to fields if allFields not provided
   tables,
   selectedTableId,
   rowIndex,
@@ -63,8 +65,41 @@ export const TableRow = ({
       
       {/* Field cells */}
       {fields.map((field) => {
-        const value = record.values?.[field.id];
-        const isCellSaving = savingCell?.recordId === record.id && savingCell?.fieldId === field.id;
+        // When viewing masterlist, we need to find the value for this field name
+        // Records have values keyed by field IDs from their own table
+        // But deduplicated fields might have IDs from different tables
+        let value: unknown = undefined;
+        let actualFieldId = field.id; // Track which field ID we're actually using for the value
+        
+        if (isMasterListView) {
+          // Find all fields with the same name from ALL tables (not just deduplicated fields)
+          const fieldsWithSameName = allFields.filter(f => f.name === field.name);
+          
+          // First, try the exact field ID match
+          if (record.values?.[field.id] !== undefined) {
+            value = record.values[field.id];
+            actualFieldId = field.id;
+          } else {
+            // If no exact match, try to find a field with the same name that belongs to the record's table
+            // This ensures we find the correct field ID even if deduplication kept a different table's field
+            for (const matchingField of fieldsWithSameName) {
+              if (matchingField.table_id === record.table_id) {
+                const matchingValue = record.values?.[matchingField.id];
+                if (matchingValue !== undefined && matchingValue !== null && matchingValue !== '') {
+                  value = matchingValue;
+                  actualFieldId = matchingField.id;
+                  break; // Use the first matching field from the record's table with data
+                }
+              }
+            }
+          }
+        } else {
+          // For non-masterlist views, use direct field ID lookup
+          value = record.values?.[field.id];
+          actualFieldId = field.id;
+        }
+        
+        const isCellSaving = savingCell?.recordId === record.id && savingCell?.fieldId === actualFieldId;
         
         // Determine if this field should render as a status label
         const shouldRenderAsLabel = (fieldName: string, fieldType: string) => {
@@ -84,7 +119,7 @@ export const TableRow = ({
               field={field}
               value={value}
               recordId={record.id}
-              onUpdate={(newValue) => onUpdateCell(record.id, field.id, newValue)}
+              onUpdate={(newValue) => onUpdateCell(record.id, actualFieldId, newValue)}
               isSaving={isCellSaving}
             />
           );

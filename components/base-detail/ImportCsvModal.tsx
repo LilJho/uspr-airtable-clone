@@ -213,10 +213,52 @@ export const ImportCsvModal = ({
       });
 
       setCsvColumns(headers);
+      
+      // Automatically map CSV columns to existing fields if they match
+      const autoMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }> = {};
+      headers.forEach(column => {
+        // Clean the header name to use for matching
+        let fieldName = column.header.trim();
+        // Remove special characters and replace with underscores
+        let cleanFieldName = fieldName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+        // Ensure it starts with a letter
+        if (!/^[a-zA-Z]/.test(cleanFieldName)) {
+          cleanFieldName = 'field_' + cleanFieldName;
+        }
+        
+        // Check if a field with this name already exists (exact match first, then similar)
+        let existingField = fields.find(field => 
+          field.name.toLowerCase() === fieldName.toLowerCase() ||
+          field.name.toLowerCase() === cleanFieldName.toLowerCase()
+        );
+        
+        // If no exact match, try to find similar field names
+        if (!existingField) {
+          existingField = fields.find(field => {
+            const fieldNameLower = field.name.toLowerCase();
+            const cleanFieldNameLower = cleanFieldName.toLowerCase();
+            const originalFieldNameLower = fieldName.toLowerCase();
+            
+            // Check for common variations
+            return fieldNameLower === originalFieldNameLower ||
+                   fieldNameLower.includes(originalFieldNameLower) ||
+                   originalFieldNameLower.includes(fieldNameLower) ||
+                   fieldNameLower.replace(/[_\s-]/g, '') === cleanFieldNameLower.replace(/[_\s-]/g, '') ||
+                   cleanFieldNameLower.replace(/[_\s-]/g, '') === fieldNameLower.replace(/[_\s-]/g, '');
+          });
+        }
+        
+        if (existingField) {
+          // Automatically map to existing field
+          autoMappings[column.header] = existingField.id;
+        }
+      });
+      
+      setFieldMappings(autoMappings);
       setStep('mapping');
     };
     reader.readAsText(selectedFile);
-  }, [parseCSVLine]);
+  }, [parseCSVLine, fields]);
 
   const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -232,18 +274,57 @@ export const ImportCsvModal = ({
 
   const handleMappingChange = useCallback((csvColumn: string, fieldId: string | 'create') => {
     if (fieldId === 'create') {
-      // Initialize with default values for creating a new field
-      setFieldMappings(prev => ({
-        ...prev,
-        [csvColumn]: { type: 'create', fieldType: 'text', fieldName: csvColumn }
-      }));
+      // Check if a field with this name already exists before creating a new one
+      let fieldName = csvColumn.trim();
+      // Remove special characters and replace with underscores
+      let cleanFieldName = fieldName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+      // Ensure it starts with a letter
+      if (!/^[a-zA-Z]/.test(cleanFieldName)) {
+        cleanFieldName = 'field_' + cleanFieldName;
+      }
+      
+      // Check if a field with this name already exists (exact match first, then similar)
+      let existingField = fields.find(field => 
+        field.name.toLowerCase() === fieldName.toLowerCase() ||
+        field.name.toLowerCase() === cleanFieldName.toLowerCase()
+      );
+      
+      // If no exact match, try to find similar field names
+      if (!existingField) {
+        existingField = fields.find(field => {
+          const fieldNameLower = field.name.toLowerCase();
+          const cleanFieldNameLower = cleanFieldName.toLowerCase();
+          const originalFieldNameLower = fieldName.toLowerCase();
+          
+          // Check for common variations
+          return fieldNameLower === originalFieldNameLower ||
+                 fieldNameLower.includes(originalFieldNameLower) ||
+                 originalFieldNameLower.includes(fieldNameLower) ||
+                 fieldNameLower.replace(/[_\s-]/g, '') === cleanFieldNameLower.replace(/[_\s-]/g, '') ||
+                 cleanFieldNameLower.replace(/[_\s-]/g, '') === fieldNameLower.replace(/[_\s-]/g, '');
+        });
+      }
+      
+      if (existingField) {
+        // Map to existing field instead of creating a new one
+        setFieldMappings(prev => ({
+          ...prev,
+          [csvColumn]: existingField!.id
+        }));
+      } else {
+        // Initialize with default values for creating a new field
+        setFieldMappings(prev => ({
+          ...prev,
+          [csvColumn]: { type: 'create', fieldType: 'text', fieldName: cleanFieldName }
+        }));
+      }
     } else {
       setFieldMappings(prev => ({
         ...prev,
         [csvColumn]: fieldId
       }));
     }
-  }, []);
+  }, [fields]);
 
   const handleCreateFieldTypeChange = useCallback((csvColumn: string, fieldType: string) => {
     setFieldMappings(prev => {
