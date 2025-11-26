@@ -1,9 +1,9 @@
 import { supabase } from '../supabaseClient';
-import type { 
-  BaseRow, 
-  TableRow, 
-  FieldRow, 
-  RecordRow, 
+import type {
+  BaseRow,
+  TableRow,
+  FieldRow,
+  RecordRow,
   Automation,
   AutomationAction,
   CreateTableData,
@@ -20,26 +20,26 @@ function cleanEmailValue(value: string): string | null {
 
   // Remove extra whitespace
   let cleaned = value.trim();
-  
+
   // Remove common delimiters and extract the first valid email
   const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
   const matches = cleaned.match(emailRegex);
-  
+
   if (matches && matches.length > 0) {
     // Return the first valid email found
     return matches[0];
   }
-  
+
   // If no valid email found, try to clean up common issues
   // Remove extra characters that might be before/after email
   cleaned = cleaned.replace(/^[^a-zA-Z0-9._%+-]*/, ''); // Remove leading non-email chars
   cleaned = cleaned.replace(/[^a-zA-Z0-9._%+-@]*$/, ''); // Remove trailing non-email chars
-  
+
   // Check if the cleaned string is now a valid email
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
     return cleaned;
   }
-  
+
   return null;
 }
 
@@ -50,28 +50,28 @@ function parseDateValue(value: string): Date | null {
   }
 
   const cleaned = value.trim();
-  
+
   // Handle common CSV date formats
   const dateFormats = [
     // ISO formats
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/, // ISO with time
     /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
-    
+
     // US formats
     /^\d{1,2}\/\d{1,2}\/\d{4}$/, // MM/DD/YYYY
     /^\d{1,2}\/\d{1,2}\/\d{2}$/, // MM/DD/YY
-    
+
     // European formats
     /^\d{1,2}\.\d{1,2}\.\d{4}$/, // DD.MM.YYYY
     /^\d{1,2}-\d{1,2}-\d{4}$/, // DD-MM-YYYY
-    
+
     // Other common formats
     /^\d{4}\/\d{1,2}\/\d{1,2}$/, // YYYY/MM/DD
   ];
-  
+
   // Check if the value matches any known format
   const matchesFormat = dateFormats.some(format => format.test(cleaned));
-  
+
   if (!matchesFormat) {
     // Try parsing as-is (handles relative dates, etc.)
     const parsed = new Date(cleaned);
@@ -80,21 +80,34 @@ function parseDateValue(value: string): Date | null {
     }
     return null;
   }
-  
+
   // Parse the date
   const parsed = new Date(cleaned);
   if (isNaN(parsed.getTime())) {
     return null;
   }
-  
+
   return parsed;
 }
 
 // Helper function to generate random colors for single select options
 function getRandomColor(): string {
   const colors = [
-    'blue', 'cyan', 'teal', 'green', 'yellow', 'orange', 'red', 'pink', 
-    'purple', 'gray', 'indigo', 'lime', 'amber', 'emerald', 'violet'
+    '#3B82F6', // blue-500
+    '#06B6D4', // cyan-500
+    '#14B8A6', // teal-500
+    '#22C55E', // green-500
+    '#EAB308', // yellow-500
+    '#F97316', // orange-500
+    '#EF4444', // red-500
+    '#EC4899', // pink-500
+    '#A855F7', // purple-500
+    '#6B7280', // gray-500
+    '#6366F1', // indigo-500
+    '#84CC16', // lime-500
+    '#F59E0B', // amber-500
+    '#10B981', // emerald-500
+    '#8B5CF6'  // violet-500
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 }
@@ -227,20 +240,20 @@ export class BaseDetailService {
     
     // Validate and sanitize field type
     const allowedTypes = ['text', 'number', 'date', 'datetime', 'email', 'phone', 'single_select', 'multi_select', 'checkbox', 'link'];
-    
+
     // Sanitize the field type - remove any whitespace and ensure it's lowercase
     const sanitizedType = fieldData.type.trim().toLowerCase();
-    
+
     if (!allowedTypes.includes(sanitizedType)) {
       throw new Error(`Invalid field type: "${fieldData.type}" (sanitized: "${sanitizedType}"). Allowed types: ${allowedTypes.join(', ')}`);
     }
-    
+
     // Create a sanitized version of the field data
     const sanitizedFieldData = {
       ...fieldData,
       type: sanitizedType
     };
-    
+
     console.log('Sanitized field data:', JSON.stringify(sanitizedFieldData, null, 2));
     console.log('Creating field in table:', tableData.name, 'table_id:', fieldData.table_id);
     
@@ -338,7 +351,7 @@ export class BaseDetailService {
       .single();
 
     if (error) throw error;
-    
+
     // If not creating in masterlist, ensure record also exists in masterlist
     // BUT: Only include values for fields that actually exist in the masterlist
     // This prevents creating records with field IDs from other tables
@@ -380,7 +393,7 @@ export class BaseDetailService {
         // Don't throw - the main record was created successfully
       }
     }
-    
+
     // Check and execute automations for new record
     try {
       await this.checkAndExecuteAutomations(tableId, data.id, values);
@@ -388,7 +401,7 @@ export class BaseDetailService {
       console.error('Automation execution failed for new record:', automationError);
       // Don't throw here as the record creation was successful
     }
-    
+
     return data as RecordRow;
   }
 
@@ -429,7 +442,7 @@ export class BaseDetailService {
 
   static async updateCell(recordId: string, fieldId: string, value: unknown): Promise<void> {
     console.log(`🔄 CELL UPDATE: Updating cell for record ${recordId}, field ${fieldId}, value:`, value);
-    
+
     // Get current record values
     const { data: record, error: fetchError } = await supabase
       .from("records")
@@ -609,8 +622,8 @@ export class BaseDetailService {
 
   // CSV Import operations
   static async importCsvData(
-    tableId: string, 
-    csvText: string, 
+    tableId: string,
+    csvText: string,
     fieldMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }>
   ): Promise<{ imported: number; errors: string[] }> {
     // Parse CSV into lines while respecting quoted fields that may contain newlines
@@ -618,11 +631,11 @@ export class BaseDetailService {
       const lines: string[] = [];
       let currentLine = '';
       let inQuotes = false;
-      
+
       for (let i = 0; i < text.length; i++) {
         const char = text[i];
         const nextChar = text[i + 1];
-        
+
         if (char === '"') {
           currentLine += char;
           if (inQuotes && nextChar === '"') {
@@ -647,17 +660,17 @@ export class BaseDetailService {
           currentLine += char;
         }
       }
-      
+
       // Add the last line if it exists
       if (currentLine.trim()) {
         lines.push(currentLine);
       }
-      
+
       return lines;
     };
-    
+
     const lines = parseCSVLines(csvText);
-    
+
     if (lines.length < 2) {
       throw new Error('CSV file must have at least a header row and one data row');
     }
@@ -667,11 +680,11 @@ export class BaseDetailService {
       const result: string[] = [];
       let current = '';
       let inQuotes = false;
-      
+
       for (let i = 0; i < row.length; i++) {
         const char = row[i];
         const nextChar = row[i + 1];
-        
+
         if (char === '"') {
           if (inQuotes && nextChar === '"') {
             // Escaped quote - add one quote and skip the next
@@ -689,7 +702,7 @@ export class BaseDetailService {
           current += char;
         }
       }
-      
+
       // Add the last field
       result.push(current.trim());
       return result;
@@ -697,13 +710,13 @@ export class BaseDetailService {
 
     const headers = parseCsvRow(lines[0]);
     const dataRows = lines.slice(1);
-    
+
     console.log('CSV Headers:', headers);
     console.log('CSV Data Rows:', dataRows);
     console.log('Field Mappings:', fieldMappings);
     console.log('Field Mappings Keys:', Object.keys(fieldMappings));
     console.log('Field Mappings Count:', Object.keys(fieldMappings).length);
-    
+
     const recordsToCreate: Array<{ table_id: string; values: Record<string, unknown> }> = [];
     const errors: string[] = [];
 
@@ -748,20 +761,20 @@ export class BaseDetailService {
     // Create new fields for mappings that specify field creation
     const fieldsToCreate = new Map<string, { fieldType: string, fieldName: string, options?: Record<string, unknown> }>();
     const createdFieldIds = new Map<string, string>();
-    
+
     // Collect unique values for single_select fields
     const singleSelectOptions = new Map<string, Set<string>>();
-    
+
     // First pass: analyze all columns to detect select fields
     const columnAnalysis = new Map<string, { uniqueValues: Set<string>, totalRows: number }>();
-    
+
     for (const [csvColumn, mapping] of Object.entries(fieldMappings)) {
       if (typeof mapping === 'object' && mapping.type === 'create') {
         const columnIndex = headers.findIndex(h => h === csvColumn);
         if (columnIndex !== -1) {
           const uniqueValues = new Set<string>();
           let totalRows = 0;
-          
+
           // Analyze all data rows for this column
           for (const row of dataRows) {
             const parsedRow = parseCsvRow(row);
@@ -773,33 +786,33 @@ export class BaseDetailService {
               }
               // Unescape double quotes
               value = value.replace(/""/g, '"');
-              
+
               if (value && value !== '(empty)') {
                 uniqueValues.add(value);
                 totalRows++;
               }
             }
           }
-          
+
           columnAnalysis.set(csvColumn, { uniqueValues, totalRows });
         }
       }
     }
-    
+
     // Second pass: determine field types and create select options
     for (const [csvColumn, mapping] of Object.entries(fieldMappings)) {
       if (typeof mapping === 'object' && mapping.type === 'create') {
         const analysis = columnAnalysis.get(csvColumn);
-        
+
         if (analysis) {
           const { uniqueValues, totalRows } = analysis;
           const uniqueCount = uniqueValues.size;
-          
+
           // Smart detection for select fields
           // Updated threshold: only detect as select if 5 or fewer unique values
           if (mapping.fieldType === 'text' && uniqueCount >= 2 && uniqueCount <= 5 && totalRows >= 2) {
             const valuesArray = Array.from(uniqueValues);
-            
+
             // Criteria for detecting select fields:
             // 1. Limited number of unique values (2-5 values)
             // 2. Values are not purely numeric (to avoid confusing with number fields)
@@ -807,19 +820,19 @@ export class BaseDetailService {
             // 4. Values are reasonable length (not too long)
             const isNotNumeric = valuesArray.some(v => isNaN(Number(v)) || v.trim() === '');
             const isNotEmail = valuesArray.every(v => !v.includes('@') || !v.includes('.'));
-            const isNotDate = valuesArray.every(v => 
-              !/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(v) && 
+            const isNotDate = valuesArray.every(v =>
+              !/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(v) &&
               !/^\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}$/.test(v)
             );
             const isNotPhone = valuesArray.every(v => !/^[\+]?[\d\s\-\(\)]+$/.test(v));
             const reasonableLength = valuesArray.every(v => v.length <= 50);
-            
+
             if (isNotNumeric && isNotEmail && isNotDate && isNotPhone && reasonableLength) {
               console.log(`🎯 SELECT FIELD DETECTED: ${mapping.fieldName} with ${uniqueCount} unique values:`, valuesArray);
-              
+
               // Upgrade field type to single_select
               mapping.fieldType = 'single_select';
-              
+
               // Create options object for the field
               const options: Record<string, { name: string; color: string }> = {};
               Array.from(uniqueValues).forEach((value, index) => {
@@ -829,18 +842,18 @@ export class BaseDetailService {
                   color: getRandomColor() // Generate a random color for each option
                 };
               });
-              
-              fieldsToCreate.set(csvColumn, { 
-                fieldType: 'single_select', 
+
+              fieldsToCreate.set(csvColumn, {
+                fieldType: 'single_select',
                 fieldName: mapping.fieldName,
-                options 
+                options
               });
-              
+
               singleSelectOptions.set(csvColumn, uniqueValues);
               continue; // Skip the normal field creation below
             }
           }
-          
+
           // Handle single_select fields that were already detected
           if (mapping.fieldType === 'single_select') {
             // Create options object for the field
@@ -852,13 +865,13 @@ export class BaseDetailService {
                 color: getRandomColor() // Generate a random color for each option
               };
             });
-            
-            fieldsToCreate.set(csvColumn, { 
-              fieldType: mapping.fieldType, 
+
+            fieldsToCreate.set(csvColumn, {
+              fieldType: mapping.fieldType,
               fieldName: mapping.fieldName,
-              options 
+              options
             });
-            
+
             singleSelectOptions.set(csvColumn, uniqueValues);
           } else {
             fieldsToCreate.set(csvColumn, { fieldType: mapping.fieldType, fieldName: mapping.fieldName });
@@ -868,6 +881,98 @@ export class BaseDetailService {
         }
       }
     }
+
+    // NEW STEP: Analyze existing single_select fields for new options
+    console.log('🔍 Analyzing existing single_select fields for new options...');
+    const existingSingleSelectUpdates = new Map<string, { field: FieldRow, newOptions: Record<string, { name: string; color: string }> }>();
+
+    for (const [csvColumn, mapping] of Object.entries(fieldMappings)) {
+      // Check if mapping is to an existing field ID
+      if (typeof mapping === 'string') {
+        const fieldId = mapping;
+        const field = fields.find(f => f.id === fieldId);
+
+        if (field && field.type === 'single_select') {
+          console.log(`  Checking field "${field.name}" (${field.id}) mapped to column "${csvColumn}"`);
+
+          const columnIndex = headers.findIndex(h => h === csvColumn);
+          if (columnIndex !== -1) {
+            const uniqueValues = new Set<string>();
+
+            // Collect all unique values from the CSV for this column
+            for (const row of dataRows) {
+              const parsedRow = parseCsvRow(row);
+              if (parsedRow[columnIndex]) {
+                let value = parsedRow[columnIndex].trim();
+                // Remove surrounding quotes if present
+                if (value.startsWith('"') && value.endsWith('"')) {
+                  value = value.slice(1, -1);
+                }
+                // Unescape double quotes
+                value = value.replace(/""/g, '"');
+
+                if (value && value !== '(empty)') {
+                  uniqueValues.add(value);
+                }
+              }
+            }
+
+            // Check which values are missing from current options
+            const currentOptions = field.options as Record<string, { name: string; color: string }> || {};
+            const newOptionsToAdd: Record<string, { name: string; color: string }> = {};
+            let nextOptionIndex = Object.keys(currentOptions).length + 1;
+
+            for (const value of uniqueValues) {
+              // Check for exact match
+              const exactMatch = Object.values(currentOptions).some(opt => opt && opt.name === value);
+
+              // Check for case-insensitive match
+              const caseInsensitiveMatch = Object.values(currentOptions).some(opt => opt && opt.name && opt.name.toLowerCase() === value.toLowerCase());
+
+              if (!exactMatch && !caseInsensitiveMatch) {
+                console.log(`    Found new option value: "${value}"`);
+                const optionId = `option_${nextOptionIndex++}`;
+                newOptionsToAdd[optionId] = {
+                  name: value,
+                  color: getRandomColor()
+                };
+              }
+            }
+
+            if (Object.keys(newOptionsToAdd).length > 0) {
+              console.log(`    Adding ${Object.keys(newOptionsToAdd).length} new options to field "${field.name}"`);
+              existingSingleSelectUpdates.set(fieldId, { field, newOptions: newOptionsToAdd });
+            }
+          }
+        }
+      }
+    }
+
+    // Apply updates to existing single_select fields
+    for (const [fieldId, update] of existingSingleSelectUpdates) {
+      try {
+        const updatedOptions = {
+          ...(update.field.options as Record<string, unknown> || {}),
+          ...update.newOptions
+        };
+
+        await this.updateField(fieldId, { options: updatedOptions });
+
+        // Update local field object so subsequent processing uses new options
+        const fieldIndex = fields.findIndex(f => f.id === fieldId);
+        if (fieldIndex !== -1) {
+          fields[fieldIndex].options = updatedOptions;
+        }
+
+        console.log(`✅ Updated field "${update.field.name}" with new options`);
+      } catch (error) {
+        console.error(`❌ Failed to update field "${update.field.name}":`, error);
+        errors.push(`Failed to add new options to field "${update.field.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    // Create all new fields
+    console.log('🔧 CREATING FIELDS:', fieldsToCreate.size, 'fields to create');
     
     // Create all new fields (or map to existing fields if masterlist)
     console.log('🔧 PROCESSING FIELDS:', fieldsToCreate.size, 'fields to process');
@@ -1036,7 +1141,7 @@ export class BaseDetailService {
         }
       }
     }
-    
+
     console.log('🔧 FIELD CREATION SUMMARY:');
     console.log('📊 Total fields after creation:', fields.length);
     console.log('📊 Created field IDs map:', Object.fromEntries(createdFieldIds));
@@ -1079,18 +1184,18 @@ export class BaseDetailService {
           // Unescape double quotes
           return cleaned.replace(/""/g, '"');
         });
-        
+
         console.log(`Processing row ${rowIndex + 2}:`, { valueCount: values.length, headerCount: headers.length });
-        
+
         // Handle column count mismatch - pad with empty values or truncate
         if (values.length !== headers.length) {
           console.warn(`Row ${rowIndex + 2}: Column count mismatch (${values.length} vs ${headers.length})`);
-          
+
           // If row has too few columns, pad with empty strings
           while (values.length < headers.length) {
             values.push('');
           }
-          
+
           // If row has too many columns, truncate (but log warning)
           if (values.length > headers.length) {
             errors.push(`Row ${rowIndex + 2}: Too many columns (${values.length} vs ${headers.length}), extra data ignored`);
@@ -1116,10 +1221,10 @@ export class BaseDetailService {
             console.log(`📋 Using existing field ID: ${fieldId} for header: ${header}`);
           } else if (typeof mapping === 'object' && mapping.type === 'create') {
             fieldId = createdFieldIds.get(header) || '';
-            console.log(`🔧 Looking for created field ID for header "${header}":`, { 
-              fieldId, 
+            console.log(`🔧 Looking for created field ID for header "${header}":`, {
+              fieldId,
               createdFieldIds: Object.fromEntries(createdFieldIds),
-              mapping 
+              mapping
             });
             if (!fieldId) {
               console.error(`❌ MISSING FIELD ID: Failed to get field ID for newly created field "${mapping.fieldName}" for header "${header}"`);
@@ -1133,7 +1238,7 @@ export class BaseDetailService {
 
           const value = values[colIndex];
           const fieldType = fieldTypeMap.get(fieldId);
-          
+
           if (!fieldType) {
             errors.push(`Row ${rowIndex + 2}: Unknown field for column "${header}"`);
             return;
@@ -1141,7 +1246,7 @@ export class BaseDetailService {
 
           // Convert value based on field type
           let convertedValue: unknown = value;
-          
+
           if (value === '' || value === null || value === undefined) {
             convertedValue = ''; // Use empty string instead of null
           } else {
@@ -1194,20 +1299,32 @@ export class BaseDetailService {
                   // Find the field to get its options
                   const field = fields.find(f => f.id === fieldId);
                   if (field && field.options) {
-                    // Find the option that matches this value
-                    const optionEntry = Object.entries(field.options).find(([_, optionData]) => {
-                      const option = optionData as { name: string; color: string };
-                      return option.name === value.trim();
+                    const options = field.options as Record<string, { name: string; color: string }>;
+                    const trimmedValue = value.trim();
+
+                    // 1. Try exact match
+                    let optionEntry = Object.entries(options).find(([_, optionData]) => {
+                      return optionData && optionData.name === trimmedValue;
                     });
-                    
+
+                    // 2. If no exact match, try case-insensitive match
+                    if (!optionEntry) {
+                      optionEntry = Object.entries(options).find(([_, optionData]) => {
+                        return optionData && optionData.name && optionData.name.toLowerCase() === trimmedValue.toLowerCase();
+                      });
+                    }
+
                     if (optionEntry) {
                       convertedValue = optionEntry[0]; // Use the option ID
                     } else {
-                      // Value doesn't match any option - this shouldn't happen with our new logic
-                      errors.push(`Row ${rowIndex + 2}: Value "${value}" does not match any option for single_select field "${header}"`);
+                      // This should rarely happen now due to our pre-processing step
+                      // But if it does (e.g. race condition or update failure), log it
+                      console.warn(`Value "${value}" still not found in options for field "${header}" after update attempts`);
+                      errors.push(`Row ${rowIndex + 2}: Value "${value}" could not be mapped to an option for field "${header}"`);
                       return;
                     }
                   } else {
+                    // Should not happen for properly configured single_select fields
                     convertedValue = value;
                   }
                 } else {
@@ -1225,20 +1342,20 @@ export class BaseDetailService {
           if (convertedValue !== null && convertedValue !== undefined) {
             hasValidData = true;
           }
-          
-          console.log(`Processed field "${header}":`, { 
-            value, 
-            convertedValue, 
-            fieldId, 
-            fieldType, 
-            hasValidData 
+
+          console.log(`Processed field "${header}":`, {
+            value,
+            convertedValue,
+            fieldId,
+            fieldType,
+            hasValidData
           });
         });
 
-        console.log(`Row ${rowIndex + 2} summary:`, { 
-          recordValues, 
-          hasValidData, 
-          willCreateRecord: hasValidData 
+        console.log(`Row ${rowIndex + 2} summary:`, {
+          recordValues,
+          hasValidData,
+          willCreateRecord: hasValidData
         });
 
         if (hasValidData) {
@@ -1269,15 +1386,15 @@ export class BaseDetailService {
     // Insert in batches of 100 records at a time
     const batchSize = 100;
     let totalImported = 0;
-    
+
     for (let i = 0; i < recordsToCreate.length; i += batchSize) {
       const batch = recordsToCreate.slice(i, i + batchSize);
       const batchNum = Math.floor(i / batchSize) + 1;
       const totalBatches = Math.ceil(recordsToCreate.length / batchSize);
-      
+
       console.log(`Inserting batch ${batchNum}/${totalBatches} (${batch.length} records)...`);
       console.log(`📊 Batch data sample:`, batch.slice(0, 2)); // Show first 2 records for debugging
-      
+
       const { data, error } = await supabase
         .from("records")
         .insert(batch)
@@ -1287,7 +1404,7 @@ export class BaseDetailService {
         console.error(`❌ Database insertion error:`, error);
         throw new Error(`Failed to import batch ${batchNum}: ${error.message}`);
       }
-      
+
       console.log(`✅ Batch ${batchNum} inserted successfully:`, data?.length, 'records');
       totalImported += batch.length;
     }
@@ -1301,7 +1418,7 @@ export class BaseDetailService {
   }
 
   static async bulkCreateRecords(
-    tableId: string, 
+    tableId: string,
     records: Array<Record<string, unknown>>
   ): Promise<RecordRow[]> {
     const recordsToCreate = records.map(values => ({
@@ -1362,7 +1479,7 @@ export class BaseDetailService {
   // Manual automation trigger for testing
   static async triggerAutomationManually(automationId: string, recordId: string): Promise<void> {
     console.log('🧪 MANUAL AUTOMATION TRIGGER: Testing automation', automationId, 'for record', recordId);
-    
+
     const { data: automation, error: fetchError } = await supabase
       .from("automations")
       .select("*")
@@ -1378,7 +1495,7 @@ export class BaseDetailService {
   // Debug function to check automation configuration
   static async debugAutomation(automationId: string): Promise<void> {
     console.log('🔍 DEBUGGING AUTOMATION:', automationId);
-    
+
     const { data: automation, error: fetchError } = await supabase
       .from("automations")
       .select("*")
@@ -1405,7 +1522,7 @@ export class BaseDetailService {
   // Debug function to test automation execution with a specific record
   static async debugAutomationExecution(automationId: string, recordId: string): Promise<void> {
     console.log('🧪 DEBUGGING AUTOMATION EXECUTION:', automationId, 'with record:', recordId);
-    
+
     try {
       const { data: automation, error: fetchError } = await supabase
         .from("automations")
@@ -1435,7 +1552,7 @@ export class BaseDetailService {
   // Automation execution
   static async executeAutomation(automation: Automation, recordId: string, newValues?: Record<string, unknown>, baseId?: string, sourceTableId?: string): Promise<void> {
     console.log('🎯 EXECUTING AUTOMATION:', automation.name, 'enabled:', automation.enabled, 'recordId:', recordId);
-    
+
     if (!automation.enabled) {
       console.log('⏸️ Automation disabled, skipping');
       return;
@@ -1462,15 +1579,15 @@ export class BaseDetailService {
     if (!automation.trigger) {
       throw new Error(`Automation ${automation.name} has no trigger configuration`);
     }
-    
+
     if (!automation.action) {
       throw new Error(`Automation ${automation.name} has no action configuration`);
     }
-    
+
     if (!automation.action.target_table_name) {
       throw new Error(`Automation ${automation.name} has no target table configured`);
     }
-    
+
     if (!automation.action.field_mappings || automation.action.field_mappings.length === 0) {
       throw new Error(`Automation ${automation.name} has no field mappings configured`);
     }
@@ -1480,7 +1597,7 @@ export class BaseDetailService {
       // Get base_id from automation
       baseId = automation.base_id;
     }
-    
+
     const { data: targetTable, error: tableError } = await supabase
       .from("tables")
       .select("id, name, is_master_list")
@@ -1516,6 +1633,11 @@ export class BaseDetailService {
     console.log('📋 Masterlist table ID:', masterlistTableId);
 
     // Check if trigger condition is met
+    if (trigger.type === 'field_change' && trigger.field_id && trigger.condition) {
+      console.log('🔍 Checking field change trigger for field:', trigger.field_id);
+
+      // Get current record values
+      const { data: record, error: fetchError } = await supabase
     const triggerFieldName = trigger.field_name;
     const triggerFieldId = trigger.field_id; // Backward compatibility
     
@@ -1715,16 +1837,21 @@ export class BaseDetailService {
       }
 
       const triggerValue = trigger.condition.value;
-      
+
       console.log('📊 Current value:', currentValue, 'Trigger value:', triggerValue, 'Operator:', trigger.condition.operator);
 
       // Check condition - handle option IDs for single_select fields
       let conditionMet = false;
-      
+
       // For single_select fields, we need to check if the current value is an option ID
       // and if the trigger value matches the display text
       let currentValueToCheck = currentValue;
       const triggerValueToCheck = triggerValue;
+
+      // If current value looks like an option ID (starts with 'option_'), we need to resolve it
+      if (String(currentValue).startsWith('option_')) {
+        console.log('🔍 OPTION ID DETECTED: Current value is an option ID, need to resolve display text');
+
         
         // Get the field to check if it's a single_select and get the options
       // Use fieldIdToCheck (the actual field in the record's table) instead of trigger.field_id
@@ -1746,11 +1873,11 @@ export class BaseDetailService {
         if (currentValue && String(currentValue).startsWith('option_')) {
           console.log('🔍 OPTION ID DETECTED: Current value is an option ID, need to resolve display text');
           const optionKey = String(currentValue);
-          
+
           console.log("🔍 ALL OPTIONS:", JSON.stringify(options, null, 2));
           console.log("🔍 Looking for option key:", optionKey);
           console.log("🔍 Option exists:", optionKey in options);
-          
+
           if (options[optionKey]) {
             const optionData = options[optionKey];
             console.log("🔍 OPTION DATA:", JSON.stringify(optionData, null, 2));
@@ -1789,7 +1916,7 @@ export class BaseDetailService {
           fieldId: fieldIdToCheck
           });
       }
-      
+
       switch (trigger.condition.operator) {
         case 'equals':
           conditionMet = String(currentValueToCheck) === String(triggerValueToCheck);
@@ -1823,7 +1950,7 @@ export class BaseDetailService {
         originalCurrentValue: currentValue,
         originalTriggerValue: triggerValue
       });
-      
+
       if (!conditionMet) {
         console.log(`❌ TRIGGER CONDITION NOT MET for "${automation.name}": Automation trigger condition not satisfied, skipping automation`);
         console.log('🔍 Trigger details:', {
@@ -1845,7 +1972,7 @@ export class BaseDetailService {
     // Execute action based on type
     console.log('🎬 Executing action:', action.type);
     console.log('🔍 Full action configuration:', JSON.stringify(action, null, 2));
-    
+
     try {
       switch (action.type) {
         case 'copy_to_table':
@@ -1883,14 +2010,14 @@ export class BaseDetailService {
   }
 
   private static async executeCopyToTable(
-    recordId: string, 
-    action: AutomationAction, 
+    recordId: string,
+    action: AutomationAction,
     targetTableId: string,
     masterlistTableId: string,
     isTargetMasterlist: boolean
   ): Promise<void> {
     console.log('📋 Starting copy to table for record:', recordId);
-    
+
     // Get source record
     const { data: sourceRecord, error: fetchError } = await supabase
       .from("records")
@@ -1910,18 +2037,18 @@ export class BaseDetailService {
     // Map field values based on field mappings
     const targetValues: Record<string, unknown> = {};
     console.log('🔗 Field mappings:', action.field_mappings);
-    
+
     if (action.field_mappings.length === 0) {
       console.log('⚠️ NO FIELD MAPPINGS: Automation has no field mappings configured');
       return;
     }
-    
+
     for (const mapping of action.field_mappings) {
       const sourceValue = sourceRecord.values[mapping.source_field_id];
       targetValues[mapping.target_field_id] = sourceValue;
       console.log(`📝 Mapping ${mapping.source_field_id} -> ${mapping.target_field_id}: ${sourceValue}`);
     }
-    
+
     console.log('🎯 Target values to create:', targetValues);
 
     // Check for duplicates and handle appropriately
@@ -1938,8 +2065,8 @@ export class BaseDetailService {
       if (action.field_mappings.length > 0) {
         const firstMapping = action.field_mappings[0];
         const targetFieldValue = targetValues[firstMapping.target_field_id];
-        
-        const existingRecord = existingRecords?.find(record => 
+
+        const existingRecord = existingRecords?.find(record =>
           record.values && record.values[firstMapping.target_field_id] === targetFieldValue
         );
 
@@ -1951,7 +2078,7 @@ export class BaseDetailService {
             existingRecordId: existingRecord.id,
             existingRecordsCount: existingRecords?.length || 0
           });
-          
+
           // Instead of skipping, let's update the existing record
           console.log(`🔄 UPDATING EXISTING RECORD: Instead of skipping, updating existing record ${existingRecord.id}`);
           await this.updateRecord(existingRecord.id, targetValues);
@@ -2067,8 +2194,8 @@ export class BaseDetailService {
   }
 
   private static async executeMoveToTable(
-    recordId: string, 
-    action: AutomationAction, 
+    recordId: string,
+    action: AutomationAction,
     targetTableId: string,
     masterlistTableId: string,
     baseId: string,
@@ -2470,7 +2597,7 @@ export class BaseDetailService {
 
     // Map field values
     const targetValues: Record<string, unknown> = {};
-    
+
     for (const mapping of action.field_mappings) {
       const sourceValue = sourceRecord.values[mapping.source_field_id];
       targetValues[mapping.target_field_id] = sourceValue;
@@ -2480,7 +2607,7 @@ export class BaseDetailService {
     if (action.field_mappings.length > 0) {
       const firstMapping = action.field_mappings[0];
       const targetFieldValue = targetValues[firstMapping.target_field_id];
-      
+
       const { data: existingRecords, error: existingError } = await supabase
         .from("records")
         .select("id, values")
@@ -2488,7 +2615,7 @@ export class BaseDetailService {
 
       if (existingError) throw existingError;
 
-      const existingRecord = existingRecords?.find(record => 
+      const existingRecord = existingRecords?.find(record =>
         record.values && record.values[firstMapping.target_field_id] === targetFieldValue
       );
 
@@ -2506,14 +2633,14 @@ export class BaseDetailService {
   }
 
   private static async executeShowInTable(
-    recordId: string, 
-    action: AutomationAction, 
+    recordId: string,
+    action: AutomationAction,
     targetTableId: string,
     masterlistTableId: string
   ): Promise<void> {
     // For show_in_table, we create a record that links back to the original
     // This is useful for creating views or filtered displays
-    
+
     const { data: sourceRecord, error: fetchError } = await supabase
       .from("records")
       .select("values")
@@ -2524,7 +2651,7 @@ export class BaseDetailService {
 
     // Map field values
     const targetValues: Record<string, unknown> = {};
-    
+
     for (const mapping of action.field_mappings) {
       const sourceValue = sourceRecord.values[mapping.source_field_id];
       targetValues[mapping.target_field_id] = sourceValue;
@@ -2663,9 +2790,9 @@ export class BaseDetailService {
     });
 
     console.log('📋 APPLICABLE AUTOMATIONS:', applicableAutomations.length, 'automations');
-    console.log('📋 Automation details:', applicableAutomations.map(a => ({ 
-      id: a.id, 
-      name: a.name, 
+    console.log('📋 Automation details:', applicableAutomations.map(a => ({
+      id: a.id,
+      name: a.name,
       enabled: a.enabled,
       triggerField: a.trigger?.field_name || a.trigger?.field_id,
       triggerCondition: a.trigger?.condition,
