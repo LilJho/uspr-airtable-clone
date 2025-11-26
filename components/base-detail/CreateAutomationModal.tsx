@@ -90,13 +90,13 @@ export const CreateAutomationModal = ({
 
   // Get unique field names across all tables for field selection
   // When "All tables in base" is selected, show unique field names (not per-table fields)
+  // Include fields from ALL tables, including masterlist
   const uniqueFieldNames = new Set<string>();
   const fieldsByName = new Map<string, FieldRow>(); // Store first occurrence of each field name
   
   for (const field of fields) {
-    const fieldTable = tables.find(t => t.id === field.table_id);
-    // Skip masterlist's own fields when showing unique fields
-    if (!fieldTable?.is_master_list && !uniqueFieldNames.has(field.name)) {
+    // Include all fields from all tables, including masterlist
+    if (!uniqueFieldNames.has(field.name)) {
       uniqueFieldNames.add(field.name);
       fieldsByName.set(field.name, field);
     }
@@ -114,6 +114,9 @@ export const CreateAutomationModal = ({
         ? Array.from(fieldsByName.values()) // Show unique field names
         : fields.filter(f => f.table_id === sourceTable.id))
     : Array.from(fieldsByName.values()); // Show unique field names when "All tables" is selected
+  
+  // Field mappings should always use the unique field list so they're table-agnostic
+  const globalSourceFields = Array.from(fieldsByName.values());
 
   // Reset trigger field when source table changes
   useEffect(() => {
@@ -317,9 +320,8 @@ export const CreateAutomationModal = ({
       const newMappings: { source_field_id: string; target_field_id: string }[] = [];
       const fieldsToCreate: { name: string; type: FieldType; order_index: number; options?: Record<string, unknown> }[] = [];
 
-      // Get all source fields (from specified table or all fields if no table specified)
-      // Note: sourceFields is already filtered to exclude masterlist's own fields if source is masterlist
-      const allSourceFields = sourceFields;
+      // Always use global source fields so mappings remain table-agnostic
+      const allSourceFields = globalSourceFields;
       
       // Track unique field names to prevent duplicates when mapping from multiple tables
       const processedFieldNames = new Set<string>();
@@ -571,15 +573,10 @@ export const CreateAutomationModal = ({
                         <option value="" disabled>No fields available{formData.trigger.table_name ? ' for selected table' : ''}</option>
                       ) : (
                         sourceFields.map(field => {
-                          // When showing unique field names, just show the field name
-                          // When showing table-specific fields, show with table name
-                          const fieldTable = tables.find(t => t.id === field.table_id);
-                          const displayName = formData.trigger.table_name && !sourceTable?.is_master_list
-                            ? `${field.name}${fieldTable ? ` (${fieldTable.name})` : ''}`
-                            : field.name; // Just show field name when "All tables" is selected
+                          // Always show just the field name (globalized across all tables)
                           return (
                             <option key={field.id} value={field.name}>
-                              {displayName}
+                              {field.name}
                             </option>
                           );
                         })
@@ -804,7 +801,7 @@ export const CreateAutomationModal = ({
               )}
 
               {formData.action.field_mappings.map((mapping, index) => {
-                const selectedSourceField = sourceFields.find(f => f.id === mapping.source_field_id);
+                const selectedSourceField = globalSourceFields.find(f => f.id === mapping.source_field_id);
                 const selectedTargetField = targetFields.find(f => f.id === mapping.target_field_id);
                 
                 return (
@@ -819,11 +816,10 @@ export const CreateAutomationModal = ({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select source field</option>
-                      {sourceFields.map(field => {
-                        const fieldTable = tables.find(t => t.id === field.table_id);
+                      {globalSourceFields.map(field => {
                         return (
                           <option key={field.id} value={field.id}>
-                            {field.name}{fieldTable ? ` (${fieldTable.name})` : ''}
+                            {field.name}
                           </option>
                         );
                       })}

@@ -597,8 +597,10 @@ export class BaseDetailService {
     }
 
     // Check and execute automations after successful cell update
+    // Pass only the changed field in newValues for filtering, but pass full updatedValues for condition checking
     try {
-      await this.checkAndExecuteAutomations(record.table_id, recordId, updatedValues);
+      const changedFieldValues = { [fieldId]: value };
+      await this.checkAndExecuteAutomations(record.table_id, recordId, changedFieldValues, updatedValues);
     } catch (automationError) {
       console.error('❌ AUTOMATION EXECUTION FAILED:', automationError);
       // Don't throw here as the cell update was successful
@@ -1431,7 +1433,7 @@ export class BaseDetailService {
   }
 
   // Automation execution
-  static async executeAutomation(automation: Automation, recordId: string, newValues?: Record<string, unknown>, baseId?: string): Promise<void> {
+  static async executeAutomation(automation: Automation, recordId: string, newValues?: Record<string, unknown>, baseId?: string, sourceTableId?: string): Promise<void> {
     console.log('🎯 EXECUTING AUTOMATION:', automation.name, 'enabled:', automation.enabled, 'recordId:', recordId);
     
     if (!automation.enabled) {
@@ -1531,15 +1533,10 @@ export class BaseDetailService {
       console.log('📋 Trigger condition:', trigger.condition);
       
       // Get current record values and table_id
-      // Use newValues if provided (from the cell update), otherwise fetch from database
-      let record: { values: Record<string, unknown>; table_id: string } | null = null;
-      let currentRecordValues: Record<string, unknown> | undefined = newValues;
-      
-      if (currentRecordValues) {
-        // Get table_id from the record in database
-        const { data: recordData, error: fetchError } = await supabase
+      // Always fetch from database to get full record values, then merge newValues if provided
+      const { data: recordData, error: fetchError } = await supabase
         .from("records")
-          .select("table_id")
+        .select("values, table_id")
         .eq("id", recordId)
         .single();
 
@@ -1551,43 +1548,49 @@ export class BaseDetailService {
         throw fetchError;
       }
 
-        record = {
-          values: currentRecordValues,
-          table_id: recordData.table_id
-        };
-        console.log('✅ Using newValues from cell update:', currentRecordValues);
-      } else {
-        // Fetch full record from database
-        const { data: recordData, error: fetchError } = await supabase
-          .from("records")
-          .select("values, table_id")
-          .eq("id", recordId)
-          .single();
-
-        if (fetchError) {
-          if (fetchError.code === 'PGRST116') {
-            console.log('⚠️ RECORD DELETED DURING TRIGGER CHECK: Record no longer exists, skipping automation:', automation.name);
-            return;
-          }
-          throw fetchError;
-        }
-        
-        record = recordData;
-        currentRecordValues = recordData.values;
-        console.log('✅ Fetched record from database:', recordData);
-      }
+      // Merge database values with newValues (if provided) to get the latest state
+      const currentRecordValues = newValues 
+        ? { ...recordData.values, ...newValues }
+        : recordData.values;
+      
+      const record = {
+        values: currentRecordValues,
+        table_id: recordData.table_id
+      };
+      
+      console.log('✅ Record values (merged with newValues):', {
+        databaseValues: recordData.values,
+        newValues: newValues,
+        mergedValues: currentRecordValues
+      });
 
       // Find the field in the record's table by name (preferred) or by ID (backward compatibility)
+      // IMPORTANT: If record is in masterlist, we need to find the field in the source table (where the record came from)
+      // because record values are keyed by field IDs from the original table, not masterlist field IDs
       let fieldIdToCheck: string | undefined;
       let currentValue: unknown;
       
+      // Determine which table to look for the field in
+      // If record is in masterlist, use sourceTableId (the table that triggered the automation)
+      // Otherwise, use the record's table_id
+      const tableToCheck = (record.table_id === masterlistTableId && sourceTableId) 
+        ? sourceTableId 
+        : record.table_id;
+      
+      console.log('🔍 Field lookup context:', {
+        recordTableId: record.table_id,
+        isMasterlist: record.table_id === masterlistTableId,
+        sourceTableId: sourceTableId,
+        tableToCheck: tableToCheck
+      });
+      
       if (triggerFieldName) {
-        // New way: Find field by name in the record's table
-        console.log('🔍 Finding field by name in record table:', triggerFieldName, 'for table:', record.table_id);
+        // New way: Find field by name in the appropriate table
+        console.log('🔍 Finding field by name:', triggerFieldName, 'in table:', tableToCheck);
         const { data: matchingFields, error: matchingError } = await supabase
           .from("fields")
           .select("id")
-          .eq("table_id", record.table_id)
+          .eq("table_id", tableToCheck)
           .eq("name", triggerFieldName)
           .limit(1);
         
@@ -1596,24 +1599,69 @@ export class BaseDetailService {
           if (fieldIdToCheck && currentRecordValues) {
             currentValue = currentRecordValues[fieldIdToCheck];
           }
-          console.log('✅ Found field by name in record table:', {
+          
+          // If value is null/undefined and record is in masterlist, try masterlist field ID
+          if ((currentValue === null || currentValue === undefined) && record.table_id === masterlistTableId) {
+            console.log('⚠️ Value not found with source table field ID, trying masterlist field ID');
+            const { data: masterlistFields, error: masterlistError } = await supabase
+              .from("fields")
+              .select("id")
+              .eq("table_id", masterlistTableId)
+              .eq("name", triggerFieldName)
+              .limit(1);
+            
+            if (!masterlistError && masterlistFields && masterlistFields.length > 0) {
+              const masterlistFieldId = masterlistFields[0].id;
+              const masterlistValue = currentRecordValues?.[masterlistFieldId];
+              if (masterlistValue !== null && masterlistValue !== undefined) {
+                fieldIdToCheck = masterlistFieldId;
+                currentValue = masterlistValue;
+                console.log('✅ Found value using masterlist field ID:', masterlistFieldId);
+              }
+            }
+          }
+          
+          // If still null/undefined, try to find any field with the same name that has a value
+          if ((currentValue === null || currentValue === undefined) && currentRecordValues) {
+            console.log('⚠️ Value still not found, searching all fields with same name in record values');
+            const { data: allFieldsWithName, error: allFieldsError } = await supabase
+              .from("fields")
+              .select("id, table_id")
+              .eq("name", triggerFieldName);
+            
+            if (!allFieldsError && allFieldsWithName) {
+              // Try each field ID to see if it exists in record values
+              for (const field of allFieldsWithName) {
+                const value = currentRecordValues[field.id];
+                if (value !== null && value !== undefined && value !== '') {
+                  fieldIdToCheck = field.id;
+                  currentValue = value;
+                  console.log('✅ Found value using field ID from table:', field.table_id, 'field ID:', field.id);
+                  break;
+                }
+              }
+            }
+          }
+          
+          console.log('✅ Found field by name:', {
             fieldId: fieldIdToCheck,
             fieldName: triggerFieldName,
+            tableId: tableToCheck,
             currentValue: currentValue,
             valueType: typeof currentValue,
             allRecordValues: Object.keys(currentRecordValues || {}),
             recordValues: currentRecordValues
           });
         } else {
-          console.log('⚠️ Field not found in record table:', {
+          console.log('⚠️ Field not found in table:', {
             fieldName: triggerFieldName,
-            tableId: record.table_id,
+            tableId: tableToCheck,
             error: matchingError,
-            availableFields: 'Will check in all base fields'
+            recordTableId: record.table_id
           });
           // Field doesn't exist in this table - skip automation for this table
           // This is expected behavior: automation only runs when the field exists
-          console.log('⚠️ Skipping automation - field', triggerFieldName, 'does not exist in this table');
+          console.log('⚠️ Skipping automation - field', triggerFieldName, 'does not exist in table', tableToCheck);
           return; // Field doesn't exist in this table, skip automation
         }
       } else if (triggerFieldId) {
@@ -1622,20 +1670,24 @@ export class BaseDetailService {
         currentValue = currentRecordValues?.[triggerFieldId];
         
         // If value not found, try to find by field name (from the original field)
-        if (currentValue === undefined) {
+        if (currentValue === undefined || currentValue === null) {
           const { data: triggerField, error: triggerFieldError } = await supabase
             .from("fields")
             .select("id, name, table_id")
             .eq("id", triggerFieldId)
             .single();
 
-          if (!triggerFieldError && triggerField && triggerField.table_id !== record.table_id) {
-            console.log('🔍 Trigger field is from different table, finding field by name:', triggerField.name);
+          if (!triggerFieldError && triggerField) {
+            // Check if we need to find the field in a different table
+            const needsLookup = triggerField.table_id !== tableToCheck;
+            
+            if (needsLookup) {
+              console.log('🔍 Trigger field is from different table, finding field by name:', triggerField.name, 'in table:', tableToCheck);
             
             const { data: matchingFields, error: matchingError } = await supabase
               .from("fields")
               .select("id")
-              .eq("table_id", record.table_id)
+                .eq("table_id", tableToCheck)
               .eq("name", triggerField.name)
               .limit(1);
             
@@ -1644,7 +1696,14 @@ export class BaseDetailService {
               if (fieldIdToCheck && currentRecordValues) {
                 currentValue = currentRecordValues[fieldIdToCheck];
               }
-              console.log('✅ Found matching field in record table:', fieldIdToCheck, 'Value:', currentValue);
+                console.log('✅ Found matching field in table:', {
+                  fieldId: fieldIdToCheck,
+                  tableId: tableToCheck,
+                  value: currentValue
+                });
+              } else {
+                console.log('⚠️ Could not find matching field by name in table:', tableToCheck);
+              }
             }
           }
         }
@@ -1755,8 +1814,9 @@ export class BaseDetailService {
           break;
       }
 
-      console.log('✅ Condition met:', conditionMet);
+      console.log('✅ Condition met:', conditionMet, 'for automation:', automation.name);
       console.log('🔍 FINAL COMPARISON:', {
+        automationName: automation.name,
         currentValueToCheck,
         triggerValueToCheck,
         operator: trigger.condition.operator,
@@ -1765,16 +1825,20 @@ export class BaseDetailService {
       });
       
       if (!conditionMet) {
-        console.log('❌ TRIGGER CONDITION NOT MET: Automation trigger condition not satisfied, skipping automation');
+        console.log(`❌ TRIGGER CONDITION NOT MET for "${automation.name}": Automation trigger condition not satisfied, skipping automation`);
         console.log('🔍 Trigger details:', {
+          automationName: automation.name,
           currentValue,
           triggerValue,
           currentValueToCheck,
           triggerValueToCheck,
           operator: trigger.condition.operator,
-          fieldId: trigger.field_id
+          fieldId: trigger.field_id,
+          fieldName: trigger.field_name
         });
         return; // Trigger condition not met, skip automation
+      } else {
+        console.log(`✅✅✅ CONDITION MET for "${automation.name}" - WILL EXECUTE`);
       }
     }
 
@@ -1791,7 +1855,7 @@ export class BaseDetailService {
           break;
         case 'move_to_table':
           console.log('🔄 MOVING TO TABLE:', automation.action.target_table_name);
-          await this.executeMoveToTable(recordId, action, targetTableId, masterlistTableId, baseId);
+          await this.executeMoveToTable(recordId, action, targetTableId, masterlistTableId, baseId, sourceTableId, newValues);
           console.log('✅ Move to table completed');
           break;
         case 'sync_to_table':
@@ -1906,18 +1970,117 @@ export class BaseDetailService {
     console.log('✅ AUTOMATION SUCCESS: Record created successfully in target table:', newRecord.id);
   }
 
+  // Helper function to sync masterlist with a table's values
+  private static async syncMasterlistWithTable(
+    recordId: string,
+    targetTableId: string,
+    masterlistTableId: string,
+    targetValues: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      // Get masterlist fields and target fields to map values by field name
+      const masterlistFields = await this.getFields(masterlistTableId);
+      const targetFields = await this.getFields(targetTableId);
+      
+      const masterlistFieldMap = new Map(masterlistFields.map(f => [f.name, f.id]));
+      const targetFieldMap = new Map(targetFields.map(f => [f.id, f]));
+      
+      // Get existing masterlist values to preserve fields not in target
+      const { data: currentMasterlistRecord, error: masterlistCheckError } = await supabase
+        .from("records")
+        .select("values")
+        .eq("id", recordId)
+        .eq("table_id", masterlistTableId)
+        .maybeSingle();
+      
+      if (masterlistCheckError && masterlistCheckError.code !== 'PGRST116') {
+        console.error('❌ Error checking masterlist record:', masterlistCheckError);
+        throw masterlistCheckError;
+      }
+      
+      // Start with existing masterlist values (or empty if doesn't exist)
+      const mergedMasterlistValues = {
+        ...(currentMasterlistRecord?.values || {}),
+      };
+      
+      // Map each target value to masterlist by field name
+      for (const [targetFieldId, value] of Object.entries(targetValues)) {
+        const targetField = targetFieldMap.get(targetFieldId);
+        if (targetField && value !== undefined) {
+          const masterlistFieldId = masterlistFieldMap.get(targetField.name);
+          if (masterlistFieldId) {
+            mergedMasterlistValues[masterlistFieldId] = value;
+            console.log(`  ✓ Mapped ${targetField.name} to masterlist: ${targetFieldId} -> ${masterlistFieldId} = ${value}`);
+          }
+        }
+      }
+      
+      // Update or create masterlist record with merged values
+      if (currentMasterlistRecord) {
+        // Update existing masterlist record
+        const { error: updateMasterlistError } = await supabase
+          .from("records")
+          .update({ values: mergedMasterlistValues })
+          .eq("id", recordId)
+          .eq("table_id", masterlistTableId);
+        
+        if (updateMasterlistError) {
+          console.error('❌ Failed to update masterlist with target values:', updateMasterlistError);
+          // Don't throw - the move was successful, this is just a sync issue
+        } else {
+          console.log('✅ Masterlist updated with target table values');
+        }
+      } else {
+        // Create masterlist record if it doesn't exist
+        const { error: createMasterlistError } = await supabase
+          .from("records")
+          .insert({ id: recordId, table_id: masterlistTableId, values: mergedMasterlistValues });
+        
+        if (createMasterlistError) {
+          if (createMasterlistError.code === '23505') {
+            // Conflict - update instead
+            console.log('⚠️ Masterlist record conflict during create, updating instead');
+            const { error: updateError } = await supabase
+              .from("records")
+              .update({ values: mergedMasterlistValues })
+              .eq("id", recordId)
+              .eq("table_id", masterlistTableId);
+            
+            if (updateError) {
+              console.error('❌ Failed to update masterlist record after conflict:', updateError);
+              // Don't throw - the move was successful
+            } else {
+              console.log('✅ Masterlist updated with target table values (after conflict)');
+            }
+          } else {
+            console.error('❌ Failed to create masterlist record:', createMasterlistError);
+            // Don't throw - the move was successful, this is just a sync issue
+          }
+        } else {
+          console.log('✅ Masterlist record created with target table values');
+        }
+      }
+    } catch (syncError) {
+      console.error('❌ Error syncing masterlist with target values:', syncError);
+      // Don't throw - the move was successful, this is just a sync issue
+    }
+  }
+
   private static async executeMoveToTable(
     recordId: string, 
     action: AutomationAction, 
     targetTableId: string,
     masterlistTableId: string,
-    baseId: string
+    baseId: string,
+    sourceTableId?: string,
+    newValues?: Record<string, unknown>
   ): Promise<void> {
     console.log('🔄 MOVING RECORD: Moving record', recordId, 'to table', targetTableId);
     console.log('🔍 Action type:', action.type);
     console.log('🔍 Preserve original setting:', action.preserve_original);
+    console.log('🔍 New values from cell update:', newValues);
     
-    // Get source record to find its current table
+    // Get source record to find its current table and values
     const { data: sourceRecord, error: fetchError } = await supabase
       .from("records")
       .select("table_id, values")
@@ -1932,29 +2095,56 @@ export class BaseDetailService {
       throw fetchError;
     }
 
-    const sourceTableId = sourceRecord.table_id;
-    const isSourceMasterlist = sourceTableId === masterlistTableId;
+    // Merge newValues with sourceRecord.values to get the latest values (including Status update)
+    // newValues takes precedence as it contains the most recent updates
+    const sourceRecordValues = newValues 
+      ? { ...sourceRecord.values, ...newValues }
+      : sourceRecord.values;
+
+    console.log('📄 Source record values (from DB):', sourceRecord.values);
+    console.log('📄 New values (from cell update):', newValues);
+    console.log('📄 Merged source record values:', sourceRecordValues);
+
+    // Use the source table that triggered the automation, or fall back to the record's current table_id
+    const actualSourceTableId = sourceTableId || sourceRecord.table_id;
+    const isSourceMasterlist = actualSourceTableId === masterlistTableId;
     const isTargetMasterlist = targetTableId === masterlistTableId;
 
-    console.log('🔍 Source table ID:', sourceTableId, 'Is masterlist:', isSourceMasterlist);
+    console.log('🔍 Source table ID (triggered):', actualSourceTableId, 'Is masterlist:', isSourceMasterlist);
+    console.log('🔍 Record current table ID:', sourceRecord.table_id);
     console.log('🔍 Target table ID:', targetTableId, 'Is masterlist:', isTargetMasterlist);
-    console.log('📄 Source record values:', sourceRecord.values);
 
     // Handle target table operation (if target is not masterlist)
     if (!isTargetMasterlist) {
       // Map field values from source to target using field mappings
       const targetValues: Record<string, unknown> = {};
       console.log('🔗 Mapping fields to target table:', action.field_mappings);
-      console.log('📋 Available source field IDs:', Object.keys(sourceRecord.values));
+      console.log('📋 Available source field IDs:', Object.keys(sourceRecordValues));
       
       if (!action.field_mappings || action.field_mappings.length === 0) {
         console.log('⚠️ NO FIELD MAPPINGS: Cannot copy data without field mappings');
         return;
       }
       
+      // Get source fields from the actual source table to map by name
+      const sourceFields = await this.getFields(actualSourceTableId);
+      const sourceFieldMap = new Map(sourceFields.map(f => [f.id, f]));
+      const sourceFieldNameMap = new Map(sourceFields.map(f => [f.name, f]));
+      
       // Build target values by mapping source fields to target fields
       console.log('🔍 Analyzing field mappings...');
       console.log('   Total mappings:', action.field_mappings.length);
+      console.log('   Source table ID:', actualSourceTableId);
+      console.log('   Source fields available:', sourceFields.map(f => f.name));
+      
+      // Get all fields from all tables to resolve field names globally
+      // This will be reused later in the merge step, so we fetch it once here
+      const allBaseFields = await this.getAllFields(baseId);
+      const allFieldsMap = new Map(allBaseFields.map(f => [f.id, f]));
+      
+      // Get target fields to resolve target field by name
+      const targetFields = await this.getFields(targetTableId);
+      const targetFieldNameMap = new Map(targetFields.map(f => [f.name, f]));
       
       for (let i = 0; i < action.field_mappings.length; i++) {
         const mapping = action.field_mappings[i];
@@ -1973,23 +2163,66 @@ export class BaseDetailService {
           continue;
         }
         
-        // Check if source field ID exists in source record
-        if (!(mapping.source_field_id in sourceRecord.values)) {
-          console.log(`  ⚠️ Source field ID not found in source record: ${mapping.source_field_id}`);
-          console.log(`     Target field ID: ${mapping.target_field_id}`);
+        // Resolve source field by name (global approach)
+        // Get the field name from the mapped source field ID (could be from any table)
+        const mappedSourceField = allFieldsMap.get(mapping.source_field_id);
+        if (!mappedSourceField) {
+          console.log(`  ⚠️ Source field ID not found in any table: ${mapping.source_field_id}`);
           continue;
         }
         
-        const sourceValue = sourceRecord.values[mapping.source_field_id];
+        const sourceFieldName = mappedSourceField.name;
+        console.log(`  🔍 Resolving source field "${sourceFieldName}" in actual source table...`);
+        
+        // Find the field with the same name in the actual source table
+        const sourceField = sourceFieldNameMap.get(sourceFieldName);
+        if (!sourceField) {
+          console.log(`  ⚠️ Source field "${sourceFieldName}" not found in source table: ${actualSourceTableId}`);
+          continue;
+        }
+        
+        const sourceFieldIdToUse = sourceField.id;
+        console.log(`  ✅ Found source field "${sourceFieldName}" in source table: ${sourceFieldIdToUse}`);
+        
+        // Check if source field ID exists in source record
+        if (!(sourceFieldIdToUse in sourceRecordValues)) {
+          console.log(`  ⚠️ Source field ID not found in source record values: ${sourceFieldIdToUse}`);
+          console.log(`     Field name: ${sourceField.name}`);
+          console.log(`     Available field IDs in record:`, Object.keys(sourceRecordValues));
+          continue;
+        }
+        
+        // Resolve target field by name (global approach)
+        // Get the field name from the mapped target field ID
+        const mappedTargetField = allFieldsMap.get(mapping.target_field_id);
+        if (!mappedTargetField) {
+          console.log(`  ⚠️ Target field ID not found in any table: ${mapping.target_field_id}`);
+          continue;
+        }
+        
+        const targetFieldName = mappedTargetField.name;
+        console.log(`  🔍 Resolving target field "${targetFieldName}" in target table...`);
+        
+        // Find the field with the same name in the target table
+        const targetField = targetFieldNameMap.get(targetFieldName);
+        if (!targetField) {
+          console.log(`  ⚠️ Target field "${targetFieldName}" not found in target table: ${targetTableId}`);
+          continue;
+        }
+        
+        const targetFieldIdToUse = targetField.id;
+        console.log(`  ✅ Found target field "${targetFieldName}" in target table: ${targetFieldIdToUse}`);
+        
+        const sourceValue = sourceRecordValues[sourceFieldIdToUse];
         
         // Copy the value regardless of whether it's empty - empty values are valid and should be copied
         // This allows the target table to have the same structure as source
-        targetValues[mapping.target_field_id] = sourceValue;
+        targetValues[targetFieldIdToUse] = sourceValue;
         
         if (sourceValue === null || sourceValue === '') {
-          console.log(`  ✓ ${mapping.source_field_id} -> ${mapping.target_field_id}: '' (empty value copied)`);
+          console.log(`  ✓ ${sourceField.name} (${sourceFieldIdToUse}) -> ${targetField.name} (${targetFieldIdToUse}): '' (empty value copied)`);
         } else {
-          console.log(`  ✓ ${mapping.source_field_id} -> ${mapping.target_field_id}: ${sourceValue}`);
+          console.log(`  ✓ ${sourceField.name} (${sourceFieldIdToUse}) -> ${targetField.name} (${targetFieldIdToUse}): ${sourceValue}`);
         }
       }
       
@@ -2003,16 +2236,16 @@ export class BaseDetailService {
         // If field mappings are empty/invalid but we have source values, try to map by field name
         console.log('🔄 Attempting fallback: Mapping fields by name...');
         
-        if (Object.keys(sourceRecord.values).length > 0) {
+        if (Object.keys(sourceRecordValues).length > 0) {
           // Get source and target fields to map by name
-          const sourceFields = await this.getFields(sourceTableId);
+          const sourceFields = await this.getFields(actualSourceTableId);
           const targetFields = await this.getFields(targetTableId);
           
           const sourceFieldMap = new Map(sourceFields.map(f => [f.id, f]));
           const targetFieldMap = new Map(targetFields.map(f => [f.name, f]));
           
           // Map fields by matching names
-          for (const [sourceFieldId, sourceValue] of Object.entries(sourceRecord.values)) {
+          for (const [sourceFieldId, sourceValue] of Object.entries(sourceRecordValues)) {
             const sourceField = sourceFieldMap.get(sourceFieldId);
             if (sourceField && sourceValue !== undefined) {
               const targetField = targetFieldMap.get(sourceField.name);
@@ -2035,226 +2268,182 @@ export class BaseDetailService {
         }
       }
       
-      console.log('📦 Target values to copy:', targetValues);
+      // Merge all source values with mapped values to preserve all data
+      // Start with all source values, then apply field mappings to map to target field IDs
+      console.log('🔄 Merging all source values with field mappings...');
+      // Reuse targetFields and allFieldsMap from above (already fetched)
+      const targetFieldMap = new Map(targetFields.map(f => [f.name, f]));
+      console.log('📋 Target table fields:', targetFields.map(f => f.name));
+      
+      // Track which values came from newValues (recent updates)
+      const newValueFieldIds = new Set(newValues ? Object.keys(newValues) : []);
+      
+      // First, prioritize values from newValues by mapping them first
+      // This ensures recent updates (like Status) are preserved
+      const mergedTargetValues: Record<string, unknown> = {};
+      console.log('🔄 Preserving all source values, total fields:', Object.keys(sourceRecordValues).length);
+      console.log('🔄 Fields from newValues (recent updates):', Array.from(newValueFieldIds));
+      console.log('🔄 NewValues content:', newValues);
+      
+      // First pass: Process values from newValues (prioritize recent updates)
+      if (newValues) {
+        console.log('🔄 FIRST PASS: Processing values from newValues (recent updates)...');
+        for (const [newValueFieldId, newValue] of Object.entries(newValues)) {
+          // Find the field to get its name (could be from any table)
+          const newValueField = allFieldsMap.get(newValueFieldId);
+          
+          if (!newValueField) {
+            console.log(`  ⚠️ Could not find field for newValue ID ${newValueFieldId}, value: ${newValue}`);
+            continue;
+          }
+          
+          // Skip undefined values
+          if (newValue === undefined) {
+            console.log(`  ⚠️ Skipping undefined newValue for ${newValueField.name} (${newValueFieldId})`);
+            continue;
+          }
+          
+          // Find target field with same name
+          const targetField = targetFieldMap.get(newValueField.name);
+          if (targetField) {
+            mergedTargetValues[targetField.id] = newValue;
+            console.log(`  ✓ PRIORITIZED ${newValueField.name} from newValues (${newValueFieldId} -> ${targetField.id}): ${newValue} [FROM NEWVALUES]`);
+          } else {
+            console.log(`  ⚠️ Target field not found for ${newValueField.name} from newValues, value will be lost: ${newValue}`);
+          }
+        }
+      }
+      
+      // Second pass: Process all other source values (preserve all data)
+      console.log('🔄 SECOND PASS: Processing all other source values...');
+      for (const [sourceFieldId, sourceValue] of Object.entries(sourceRecordValues)) {
+        const isFromNewValues = newValueFieldIds.has(sourceFieldId);
+        
+        // Skip if we already processed this from newValues (to avoid overwriting)
+        if (isFromNewValues) {
+          continue;
+        }
+        
+        // Find the source field to get its name (check both sourceFields and allBaseFields)
+        const sourceField = sourceFieldMap.get(sourceFieldId) || allFieldsMap.get(sourceFieldId);
+        
+        if (!sourceField) {
+          console.log(`  ⚠️ Could not find field for ID ${sourceFieldId}, value: ${sourceValue}`);
+          continue;
+        }
+        
+        // Don't filter out values - preserve all non-undefined values (including empty strings and null)
+        // Only skip if value is explicitly undefined
+        if (sourceValue === undefined) {
+          console.log(`  ⚠️ Skipping undefined value for ${sourceField.name} (${sourceFieldId})`);
+          continue;
+        }
+        
+        // Find target field with same name
+        const targetField = targetFieldMap.get(sourceField.name);
+        if (targetField) {
+          // Only set if not already set from newValues
+          if (!(targetField.id in mergedTargetValues)) {
+            mergedTargetValues[targetField.id] = sourceValue;
+            console.log(`  ✓ Preserved ${sourceField.name} (${sourceFieldId} -> ${targetField.id}): ${sourceValue}`);
+          } else {
+            console.log(`  ⏭️ Skipped ${sourceField.name} - already set from newValues`);
+          }
+        } else {
+          console.log(`  ⚠️ Target field not found for ${sourceField.name}, skipping value: ${sourceValue}`);
+        }
+      }
+      
+      // Then apply explicit field mappings (these can override name-based mappings, but not newValues)
+      console.log('🔄 Applying explicit field mappings...');
+      for (const [targetFieldId, mappedValue] of Object.entries(targetValues)) {
+        // Check if we already have a value for this target field from the preserve step
+        const existingValue = mergedTargetValues[targetFieldId];
+        
+        // Check if this target field corresponds to a field that was in newValues
+        // We need to find the target field name, then check if any source field with that name was in newValues
+        const targetField = targetFields.find(f => f.id === targetFieldId);
+        let isFromNewValues = false;
+        
+        if (targetField && newValues) {
+          // Check if any field with the same name was updated in newValues
+          for (const [newValueFieldId, newValue] of Object.entries(newValues)) {
+            const newValueField = allFieldsMap.get(newValueFieldId);
+            if (newValueField && newValueField.name === targetField.name) {
+              isFromNewValues = true;
+              console.log(`  🔍 Target field ${targetField.name} (${targetFieldId}) corresponds to newValue field ${newValueField.name} (${newValueFieldId})`);
+              break;
+            }
+          }
+        }
+        
+        if (existingValue !== undefined) {
+          if (isFromNewValues) {
+            console.log(`  ✓ Keeping preserved value for ${targetField?.name || targetFieldId} (from newValues): ${existingValue}`);
+            // Keep the existing value (from newValues) - don't override
+            continue;
+          } else {
+            console.log(`  ✓ Overriding with field mapping: ${targetField?.name || targetFieldId} (${targetFieldId}) = ${mappedValue} (was: ${existingValue})`);
+          }
+        } else {
+          console.log(`  ✓ Setting field mapping: ${targetField?.name || targetFieldId} (${targetFieldId}) = ${mappedValue}`);
+        }
+        
+        mergedTargetValues[targetFieldId] = mappedValue;
+      }
+      
+      console.log('📦 Final target values (merged):', mergedTargetValues);
+      console.log('📊 Final target values keys:', Object.keys(mergedTargetValues));
+      const finalTargetValues = mergedTargetValues;
 
       if (isSourceMasterlist) {
-        // Source is masterlist: COPY - create a NEW record in target table (don't reuse ID, don't delete from masterlist)
-        console.log('📝 COPY: Source is masterlist - creating NEW record in target table');
+        // Source is masterlist: MOVE - update the record's table_id to target table, then sync masterlist
+        console.log('🔄 MOVE: Source is masterlist - moving record to target table by updating table_id');
         
-        const { data: newRecord, error: createError } = await supabase
-        .from("records")
-          .insert({ table_id: targetTableId, values: targetValues })
-        .select("id")
-          .single();
-        
-        if (createError) {
-          console.error('❌ Failed to create new record in target table:', createError);
-          throw createError;
-        }
-        console.log('✅ COPY COMPLETED: New record created in target table:', newRecord.id);
-        console.log('📋 Masterlist record preserved (not deleted)');
-      } else {
-        // Source is NOT masterlist: MOVE - create/update in target, update masterlist, delete from source
-        console.log('🔄 MOVE: Source is not masterlist - moving record to target table');
-        
-        // First, update/create masterlist record with ALL source values
-        const { data: masterlistRecord, error: masterlistCheckError } = await supabase
-          .from("records")
-          .select("id, values")
-        .eq("table_id", masterlistTableId)
-        .eq("id", recordId)
-          .maybeSingle();
-
-        if (masterlistCheckError && masterlistCheckError.code !== 'PGRST116') {
-          console.error('❌ Error checking masterlist record:', masterlistCheckError);
-          throw masterlistCheckError;
-        }
-
-        // Merge masterlist values with source values
-        const masterlistValues = {
-          ...(masterlistRecord?.values || {}),
-          ...sourceRecord.values
-        };
-
-        if (masterlistRecord) {
-          // Update existing masterlist record
-          console.log('📋 Updating masterlist record with source values');
-          const { error: updateMasterlistError } = await supabase
+        // Update the existing record's table_id to the target table
+        // This makes the record move from masterlist to target table
+        console.log('🔁 Updating record table_id from masterlist to', targetTableId);
+        const { error: moveRecordError } = await supabase
             .from("records")
-            .update({ values: masterlistValues })
+          .update({ table_id: targetTableId, values: finalTargetValues })
             .eq("id", recordId)
-            .eq("table_id", masterlistTableId);
-          
-          if (updateMasterlistError) {
-            console.error('❌ Failed to update masterlist record:', updateMasterlistError);
-            throw updateMasterlistError;
-          }
-          console.log('✅ Masterlist record updated');
-        } else {
-          // Create masterlist record if it doesn't exist
-          console.log('📋 Creating record in masterlist');
-          const { error: createMasterlistError } = await supabase
-            .from("records")
-            .insert({ id: recordId, table_id: masterlistTableId, values: masterlistValues });
-          
-          if (createMasterlistError) {
-            if (createMasterlistError.code === '23505') {
-              // Conflict - update instead
-              console.log('⚠️ Masterlist record conflict, updating instead');
-              const { error: updateError } = await supabase
-                .from("records")
-                .update({ values: masterlistValues })
-                .eq("id", recordId)
-                .eq("table_id", masterlistTableId);
-              
-              if (updateError) {
-                console.error('❌ Failed to update masterlist record:', updateError);
-                throw updateError;
-              }
-              console.log('✅ Masterlist record updated (after conflict)');
-            } else {
-              console.error('❌ Failed to create masterlist record:', createMasterlistError);
-              throw createMasterlistError;
-            }
+          .eq("table_id", masterlistTableId); // Only update if it's still in masterlist
+        
+        if (moveRecordError) {
+          console.error('❌ Failed to move record from masterlist to target table:', moveRecordError);
+          throw moveRecordError;
+        }
+        console.log('✅ Record table_id updated to target table');
+        
+        // Now sync masterlist with the target table's values
+        console.log('🔄 Syncing masterlist with target table values after move');
+        await this.syncMasterlistWithTable(recordId, targetTableId, masterlistTableId, finalTargetValues);
+        
+        console.log('✅ MOVE COMPLETED: Record moved from masterlist to target table and masterlist synced');
           } else {
-            console.log('✅ Masterlist record created');
-          }
-        }
+        // Source is NOT masterlist: MOVE - simply update the record's table_id to target table
+        console.log('🔄 MOVE: Source is not masterlist - moving record to target table by updating table_id');
         
-        // Now create/update record in target table
-        // Always check if record exists first to avoid conflicts
-        const { data: existingTargetRecord, error: existingError } = await supabase
+        // Simply update the existing record's table_id to the target table
+        // This makes the record disappear from source table and appear in target table
+        console.log('🔁 Updating record table_id from', actualSourceTableId, 'to', targetTableId);
+        const { error: moveRecordError } = await supabase
         .from("records")
-          .select("id, values")
-        .eq("table_id", targetTableId)
+          .update({ table_id: targetTableId, values: finalTargetValues })
         .eq("id", recordId)
-          .maybeSingle();
-
-        if (existingError && existingError.code !== 'PGRST116') {
-          console.error('❌ Error checking for existing record in target:', existingError);
-          throw existingError;
-        }
-
-        // Create or update record in target table
-        let finalTargetValues = targetValues; // Keep track of what was actually saved
+          .eq("table_id", actualSourceTableId); // Only update if it's still in the source table
         
-        if (existingTargetRecord) {
-        // Update existing record in target table
-          console.log('💾 Updating existing record in target table (record already exists)');
-          const { error: updateError } = await supabase
-            .from("records")
-            .update({ values: targetValues })
-            .eq("id", recordId)
-            .eq("table_id", targetTableId);
-          
-          if (updateError) {
-            console.error('❌ Failed to update record in target table:', updateError);
-            throw updateError;
-          }
-        console.log('✅ Record updated in target table');
-        } else {
-          // Create record in target table with same ID
-          console.log('💾 Creating record in target table with same ID');
-          const { error: createError } = await supabase
-            .from("records")
-            .insert({ id: recordId, table_id: targetTableId, values: targetValues });
-          
-          if (createError) {
-            // If conflict occurs (record was created in the meantime), update instead
-            if (createError.code === '23505') {
-              console.log('⚠️ Target record conflict during create, updating instead');
-              const { error: updateError } = await supabase
-                .from("records")
-                .update({ values: targetValues })
-                .eq("id", recordId)
-                .eq("table_id", targetTableId);
-              
-              if (updateError) {
-                console.error('❌ Failed to update record in target table after conflict:', updateError);
-                throw updateError;
-              }
-              console.log('✅ Record updated in target table (after conflict)');
-            } else {
-              console.error('❌ Failed to create record in target table:', createError);
-              throw createError;
-            }
-          } else {
-            console.log('✅ Record created in target table');
-          }
+        if (moveRecordError) {
+          console.error('❌ Failed to move record to target table:', moveRecordError);
+          throw moveRecordError;
         }
+        console.log('✅ Record table_id updated to target table');
         
-        // Now update masterlist with the TARGET table's values (using the targetValues we just created/updated)
-        // This ensures masterlist reflects the final state after the move
-        console.log('🔄 Updating masterlist with target table values after move');
-        try {
-          // Get masterlist fields and target fields to map values by field name
-          const masterlistFields = await this.getFields(masterlistTableId);
-          const targetFields = await this.getFields(targetTableId);
-          
-          const masterlistFieldMap = new Map(masterlistFields.map(f => [f.name, f.id]));
-          const targetFieldMap = new Map(targetFields.map(f => [f.id, f]));
-          
-          // Get existing masterlist values to preserve fields not in target
-          const { data: currentMasterlistRecord } = await supabase
-            .from("records")
-            .select("values")
-            .eq("id", recordId)
-            .eq("table_id", masterlistTableId)
-            .maybeSingle();
-          
-          const mergedMasterlistValues = {
-            ...(currentMasterlistRecord?.values || {}),
-          };
-          
-          // Map each target value to masterlist by field name (using targetValues we already have)
-          for (const [targetFieldId, value] of Object.entries(finalTargetValues)) {
-            const targetField = targetFieldMap.get(targetFieldId);
-            if (targetField && value !== undefined) {
-              const masterlistFieldId = masterlistFieldMap.get(targetField.name);
-              if (masterlistFieldId) {
-                mergedMasterlistValues[masterlistFieldId] = value;
-                console.log(`  ✓ Mapped ${targetField.name} to masterlist: ${targetFieldId} -> ${masterlistFieldId} = ${value}`);
-              }
-            }
-          }
-          
-          // Update masterlist with merged values (preserving non-target fields, updating with target values)
-          const { error: updateMasterlistAfterMoveError } = await supabase
-            .from("records")
-            .update({ values: mergedMasterlistValues })
-            .eq("id", recordId)
-            .eq("table_id", masterlistTableId);
-          
-          if (updateMasterlistAfterMoveError) {
-            console.error('❌ Failed to update masterlist with target values:', updateMasterlistAfterMoveError);
-            // Don't throw - the move was successful, this is just a sync issue
-          } else {
-            console.log('✅ Masterlist updated with target table values after move');
-          }
-        } catch (syncError) {
-          console.error('❌ Error syncing masterlist with target values after move:', syncError);
-          // Don't throw - the move was successful
-        }
+        // Now sync masterlist with the target table's values
+        console.log('🔄 Syncing masterlist with target table values after move');
+        await this.syncMasterlistWithTable(recordId, targetTableId, masterlistTableId, finalTargetValues);
         
-        // Delete from source table (if not preserving original)
-        if (!action.preserve_original) {
-          console.log('🗑️ Deleting record from source table:', sourceTableId);
-      const { error: deleteError } = await supabase
-        .from("records")
-        .delete()
-        .eq("id", recordId)
-        .eq("table_id", sourceTableId);
-
-      if (deleteError) {
-            console.error('❌ Failed to delete record from source table:', deleteError);
-            throw deleteError;
-          }
-          console.log('✅ Record deleted from source table');
-    } else {
-          console.log('ℹ️ Preserve original is true - keeping record in source table');
-        }
-        
-        console.log('✅ MOVE COMPLETED: Record moved to target, masterlist updated with target values, source deleted');
+        console.log('✅ MOVE COMPLETED: Record moved to target table and masterlist synced');
       }
     } else {
       console.log('ℹ️ Target is masterlist - skipping target table operation');
@@ -2351,9 +2540,10 @@ export class BaseDetailService {
   static async checkAndExecuteAutomations(
     tableId: string, 
     recordId: string, 
-    newValues?: Record<string, unknown>
+    newValues?: Record<string, unknown>,
+    fullRecordValues?: Record<string, unknown> // Optional: full record values for condition checking
   ): Promise<void> {
-    console.log('🔍 CHECKING AUTOMATIONS: Table:', tableId, 'Record:', recordId, 'Values:', newValues);
+    console.log('🔍 CHECKING AUTOMATIONS: Table:', tableId, 'Record:', recordId, 'Changed Values:', newValues, 'Full Values:', fullRecordValues);
     
     // Get base_id from table
     const { data: table, error: tableError } = await supabase
@@ -2373,27 +2563,102 @@ export class BaseDetailService {
     // Get all automations for this base
     const allAutomations = await this.getAutomations(baseId);
     console.log('📋 ALL AUTOMATIONS FOUND:', allAutomations.length, 'automations for base');
+    console.log('📋 ALL AUTOMATIONS DETAILS:', allAutomations.map(a => ({
+      name: a.name,
+      enabled: a.enabled,
+      triggerType: a.trigger?.type,
+      triggerFieldName: a.trigger?.field_name,
+      triggerFieldId: a.trigger?.field_id,
+      triggerTableName: a.trigger?.table_name,
+      condition: a.trigger?.condition,
+      actionType: a.action?.type,
+      targetTable: a.action?.target_table_name
+    })));
 
-    // Filter automations that apply to this table/record
+    // Get list of changed field IDs (if newValues provided)
+    const changedFieldIds = newValues ? Object.keys(newValues) : [];
+    console.log('🔍 Changed field IDs:', changedFieldIds);
+
+    // If we have changed fields, get their names for matching
+    const changedFieldNames = new Set<string>();
+    if (changedFieldIds.length > 0) {
+      const { data: changedFields } = await supabase
+        .from("fields")
+        .select("id, name")
+        .in("id", changedFieldIds);
+      
+      if (changedFields) {
+        for (const field of changedFields) {
+          changedFieldNames.add(field.name);
+        }
+      }
+      console.log('🔍 Changed field names:', Array.from(changedFieldNames));
+    }
+
+    // Filter automations that apply to this table/record AND trigger field
+    console.log('\n🔍 FILTERING AUTOMATIONS:');
+    console.log('📊 Filter criteria:', {
+      currentTableName: tableName,
+      changedFieldIds,
+      changedFieldNames: Array.from(changedFieldNames)
+    });
+    
     const applicableAutomations = allAutomations.filter(automation => {
+      console.log(`\n🔎 Evaluating automation: "${automation.name}"`);
+      console.log('   Trigger config:', {
+        type: automation.trigger?.type,
+        field_id: automation.trigger?.field_id,
+        field_name: automation.trigger?.field_name,
+        table_name: automation.trigger?.table_name,
+        condition: automation.trigger?.condition
+      });
+      
       // Skip disabled automations
       if (!automation.enabled) {
-        console.log('⏭️ Skipping disabled automation:', automation.name);
+        console.log(`   ❌ SKIPPED: "${automation.name}" - disabled`);
         return false;
       }
       
       // If trigger specifies a table_name (non-empty, non-null), it must match
       const triggerTableName = automation.trigger?.table_name;
       if (triggerTableName && triggerTableName.trim() !== '' && triggerTableName !== tableName) {
-        console.log('⏭️ Skipping automation - table name mismatch:', {
-          automation: automation.name,
-          triggerTableName,
-          currentTableName: tableName
-        });
+        console.log(`   ❌ SKIPPED: "${automation.name}" - table name mismatch (${triggerTableName} !== ${tableName})`);
         return false;
       }
-      // Otherwise, automation applies to all tables in the base
-      console.log('✅ Automation applies to this table:', automation.name);
+
+      // For field_change triggers, check if the trigger field matches a changed field
+      if (automation.trigger?.type === 'field_change' && changedFieldIds.length > 0) {
+        const triggerFieldId = automation.trigger?.field_id;
+        const triggerFieldName = automation.trigger?.field_name;
+        
+        // Check if trigger field ID matches a changed field ID
+        const fieldIdMatches = triggerFieldId && changedFieldIds.includes(triggerFieldId);
+        
+        // Check if trigger field name matches a changed field name (normalize for comparison)
+        const normalizedTriggerFieldName = triggerFieldName?.trim().toLowerCase();
+        const normalizedChangedFieldNames = new Set(Array.from(changedFieldNames).map(n => n.trim().toLowerCase()));
+        const fieldNameMatches = triggerFieldName && normalizedTriggerFieldName && normalizedChangedFieldNames.has(normalizedTriggerFieldName);
+        
+        console.log('   Field matching check:', {
+          triggerFieldId,
+          triggerFieldName,
+          normalizedTriggerFieldName,
+          fieldIdMatches,
+          fieldNameMatches,
+          changedFieldIds,
+          changedFieldNames: Array.from(changedFieldNames)
+        });
+        
+        if (!fieldIdMatches && !fieldNameMatches) {
+          console.log(`   ❌ SKIPPED: "${automation.name}" - trigger field not changed`);
+          return false;
+        }
+        
+        console.log(`   ✅ PASSED: "${automation.name}" - trigger field matches changed field`);
+      } else {
+        console.log(`   ✅ PASSED: "${automation.name}" - not a field_change trigger or no changed fields`);
+      }
+      
       return true;
     });
 
@@ -2402,27 +2667,67 @@ export class BaseDetailService {
       id: a.id, 
       name: a.name, 
       enabled: a.enabled,
-      trigger: a.trigger,
+      triggerField: a.trigger?.field_name || a.trigger?.field_id,
+      triggerCondition: a.trigger?.condition,
       action: a.action
     })));
+    console.log('📋 Automation order (will be checked in this order):', applicableAutomations.map(a => a.name));
 
     if (applicableAutomations.length === 0) {
       console.log('⚠️ NO APPLICABLE AUTOMATIONS: No automations found for this table/record');
       return;
     }
 
-    // Execute each automation
-    for (const automation of applicableAutomations) {
+    // Track if any forward automation moved the record (to prevent immediate reverse)
+    let recordWasMoved = false;
+    let newTableId = tableId;
+
+    // Execute each automation (forward direction)
+    console.log('🔄 STARTING AUTOMATION CHECKS - Total automations to check:', applicableAutomations.length);
+    for (let i = 0; i < applicableAutomations.length; i++) {
+      const automation = applicableAutomations[i];
       try {
-        console.log('⚡ EXECUTING AUTOMATION:', automation.name, 'for record:', recordId);
+        console.log(`\n${'='.repeat(80)}`);
+        console.log(`⚡ CHECKING AUTOMATION ${i + 1}/${applicableAutomations.length}: "${automation.name}"`);
+        console.log(`${'='.repeat(80)}`);
         console.log('🔍 Automation details:', {
           id: automation.id,
           name: automation.name,
           enabled: automation.enabled,
           trigger: automation.trigger,
-          action: automation.action
+          action: automation.action,
+          triggerField: automation.trigger?.field_name || automation.trigger?.field_id,
+          condition: automation.trigger?.condition,
+          expectedConditionValue: automation.trigger?.condition?.value
         });
-        await this.executeAutomation(automation, recordId, newValues, baseId);
+        
+        // Get record's current table before execution
+        const { data: recordBefore } = await supabase
+          .from("records")
+          .select("table_id")
+          .eq("id", recordId)
+          .single();
+        
+        const tableBefore = recordBefore?.table_id;
+        
+        // Use fullRecordValues if provided, otherwise use newValues (which may be partial)
+        const valuesForExecution = fullRecordValues || newValues;
+        await this.executeAutomation(automation, recordId, valuesForExecution, baseId, tableId);
+        
+        // Check if record was moved
+        const { data: recordAfter } = await supabase
+          .from("records")
+          .select("table_id")
+          .eq("id", recordId)
+          .single();
+        
+        const tableAfter = recordAfter?.table_id;
+        if (tableBefore !== tableAfter) {
+          recordWasMoved = true;
+          newTableId = tableAfter || tableId;
+          console.log(`📦 RECORD MOVED: ${tableBefore} -> ${tableAfter} by automation: ${automation.name}`);
+        }
+        
         console.log('✅ AUTOMATION COMPLETED:', automation.name);
       } catch (error) {
         console.error(`❌ AUTOMATION ERROR: ${automation.name} (${automation.id}):`, error);
@@ -2442,6 +2747,382 @@ export class BaseDetailService {
         });
         // Continue with other automations even if one fails
       }
+    }
+
+    // After forward automations, check for reverse automations (undo moves when condition is no longer met)
+    // Only check if record was NOT moved by a forward automation (to prevent immediate reversal)
+    // Also only check automations that have "move_to_table" action and the record is in their target table
+    if (!recordWasMoved) {
+      console.log('🔄 Checking for reverse automations (undo moves)...');
+      // Get current table name (in case it changed)
+      const { data: currentTable } = await supabase
+        .from("tables")
+        .select("name")
+        .eq("id", newTableId)
+        .single();
+      
+      const currentTableName = currentTable?.name || tableName;
+      
+      for (const automation of allAutomations) {
+        if (!automation.enabled || automation.action.type !== 'move_to_table') {
+          continue;
+        }
+        
+        // Check if this automation's target table matches the current table
+        if (automation.action.target_table_name === currentTableName) {
+          console.log(`🔍 Found potential reverse automation: ${automation.name} (target: ${automation.action.target_table_name})`);
+          
+          // Check if trigger condition is NOT met (meaning we should reverse)
+          const shouldReverse = await this.shouldReverseAutomation(automation, recordId, newValues, baseId, newTableId);
+          
+          if (shouldReverse) {
+            console.log(`↩️ REVERSING AUTOMATION: ${automation.name} - condition no longer met, moving record back`);
+            try {
+              await this.reverseMoveAutomation(automation, recordId, baseId, newTableId);
+              console.log(`✅ REVERSE COMPLETED: ${automation.name}`);
+            } catch (error) {
+              console.error(`❌ REVERSE ERROR: ${automation.name}:`, error);
+              // Continue with other automations
+            }
+          } else {
+            console.log(`✓ Condition still met for ${automation.name}, no reverse needed`);
+          }
+        }
+      }
+    } else {
+      console.log('⏭️ Skipping reverse automation check - record was moved by forward automation');
+    }
+  }
+
+  // Check if an automation should be reversed (condition no longer met)
+  private static async shouldReverseAutomation(
+    automation: Automation,
+    recordId: string,
+    newValues: Record<string, unknown> | undefined,
+    baseId: string,
+    currentTableId: string
+  ): Promise<boolean> {
+    const trigger = automation.trigger;
+    
+    // Only reverse field_change triggers with conditions
+    if (trigger.type !== 'field_change' || !trigger.condition) {
+      return false;
+    }
+    
+    // Get current record values
+    const { data: record, error: fetchError } = await supabase
+      .from("records")
+      .select("values, table_id")
+      .eq("id", recordId)
+      .single();
+
+    if (fetchError) {
+      return false;
+    }
+
+    // Merge newValues with record values
+    const currentRecordValues = newValues ? { ...record.values, ...newValues } : record.values;
+
+    // Get masterlist table
+    const { data: masterlistTable } = await supabase
+      .from("tables")
+      .select("id")
+      .eq("base_id", baseId)
+      .eq("is_master_list", true)
+      .single();
+
+    const masterlistTableId = masterlistTable?.id;
+
+    // Find the field to check
+    const triggerFieldName = trigger.field_name;
+    const triggerFieldId = trigger.field_id;
+    
+    if (!triggerFieldName && !triggerFieldId) {
+      return false;
+    }
+
+    // Determine which table to check the field in
+    const tableToCheck = (record.table_id === masterlistTableId && currentTableId !== masterlistTableId)
+      ? currentTableId
+      : record.table_id;
+
+    // Find the field with robust fallback logic (same as executeAutomation)
+    let fieldIdToCheck: string | undefined;
+    let currentValue: unknown;
+
+    if (triggerFieldName) {
+      const { data: matchingFields } = await supabase
+        .from("fields")
+        .select("id")
+        .eq("table_id", tableToCheck)
+        .eq("name", triggerFieldName)
+        .limit(1);
+
+      if (matchingFields && matchingFields.length > 0) {
+        fieldIdToCheck = matchingFields[0].id;
+        if (fieldIdToCheck) {
+          currentValue = currentRecordValues[fieldIdToCheck];
+        }
+        
+        // If value is null/undefined and record is in masterlist, try masterlist field ID
+        if ((currentValue === null || currentValue === undefined) && record.table_id === masterlistTableId) {
+          const { data: masterlistFields } = await supabase
+            .from("fields")
+            .select("id")
+            .eq("table_id", masterlistTableId)
+            .eq("name", triggerFieldName)
+            .limit(1);
+          
+          if (masterlistFields && masterlistFields.length > 0) {
+            const masterlistFieldId = masterlistFields[0].id;
+            const masterlistValue = currentRecordValues?.[masterlistFieldId];
+            if (masterlistValue !== null && masterlistValue !== undefined) {
+              fieldIdToCheck = masterlistFieldId;
+              currentValue = masterlistValue;
+            }
+          }
+        }
+        
+        // If still null/undefined, try to find any field with the same name that exists in record values
+        // Include empty string values - they're valid and should be checked
+        if ((currentValue === null || currentValue === undefined) && currentRecordValues) {
+          const { data: allFieldsWithName } = await supabase
+            .from("fields")
+            .select("id, table_id")
+            .eq("name", triggerFieldName);
+          
+          if (allFieldsWithName) {
+            // Try each field ID to see if it exists in record values (including empty string)
+            for (const field of allFieldsWithName) {
+              if (field.id in currentRecordValues) {
+                const value = currentRecordValues[field.id];
+                // Accept any value including null, undefined, or empty string
+                fieldIdToCheck = field.id;
+                currentValue = value; // This could be null, undefined, or ''
+                break;
+              }
+            }
+          }
+        }
+      }
+    } else if (triggerFieldId) {
+      fieldIdToCheck = triggerFieldId;
+      currentValue = currentRecordValues[triggerFieldId];
+      
+      // If value not found, try to find by field name
+      if (currentValue === undefined || currentValue === null) {
+        const { data: triggerField } = await supabase
+          .from("fields")
+          .select("id, name, table_id")
+          .eq("id", triggerFieldId)
+          .single();
+
+        if (triggerField) {
+          const needsLookup = triggerField.table_id !== tableToCheck;
+          
+          if (needsLookup) {
+            const { data: matchingFields } = await supabase
+              .from("fields")
+              .select("id")
+              .eq("table_id", tableToCheck)
+              .eq("name", triggerField.name)
+              .limit(1);
+            
+            if (matchingFields && matchingFields.length > 0) {
+              fieldIdToCheck = matchingFields[0].id;
+              if (fieldIdToCheck && currentRecordValues) {
+                currentValue = currentRecordValues[fieldIdToCheck];
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (!fieldIdToCheck) {
+      console.log('⚠️ REVERSE CHECK: Could not find field, skipping reverse:', {
+        fieldName: triggerFieldName,
+        fieldId: triggerFieldId,
+        tableToCheck,
+        recordTableId: record.table_id
+      });
+      return false;
+    }
+    
+    // Allow empty/null values to be checked - if value is empty and condition requires a specific value,
+    // then condition is NOT met and we should reverse
+    // Only skip if we truly couldn't find the field ID
+    if (currentValue === undefined) {
+      // Field exists but value is undefined - treat as empty and check condition
+      currentValue = null;
+      console.log('⚠️ REVERSE CHECK: Field value is undefined, treating as empty/null for condition check');
+    }
+
+    // Check if condition is NOT met (should reverse)
+    const triggerValue = trigger.condition.value;
+    let conditionMet = false;
+    let currentValueToCheck = currentValue;
+    let normalizedCurrentValue = '';
+    const normalizedTriggerValue = String(triggerValue || '');
+
+    // Handle single_select fields
+    if (fieldIdToCheck) {
+      const { data: field } = await supabase
+        .from("fields")
+        .select("type, options")
+        .eq("id", fieldIdToCheck)
+        .single();
+
+      // Handle empty/null values - convert to empty string for comparison
+      if (currentValue === null || currentValue === undefined || currentValue === '') {
+        currentValueToCheck = '';
+      } else if (field && field.type === 'single_select' && field.options) {
+        const options = field.options as Record<string, { name?: string; label?: string; color: string }>;
+        if (String(currentValue).startsWith('option_')) {
+          const optionData = options[String(currentValue)];
+          if (optionData) {
+            currentValueToCheck = optionData.name || optionData.label || '';
+          } else {
+            // Option ID not found in options, treat as empty
+            currentValueToCheck = '';
+          }
+        }
+      }
+
+      // Normalize both values to strings for comparison
+      normalizedCurrentValue = String(currentValueToCheck || '');
+
+      switch (trigger.condition.operator) {
+        case 'equals':
+          conditionMet = normalizedCurrentValue === normalizedTriggerValue;
+          break;
+        case 'not_equals':
+          conditionMet = normalizedCurrentValue !== normalizedTriggerValue;
+          break;
+        case 'contains':
+          conditionMet = normalizedCurrentValue.includes(normalizedTriggerValue);
+          break;
+        case 'greater_than':
+          conditionMet = Number(normalizedCurrentValue) > Number(normalizedTriggerValue);
+          break;
+        case 'less_than':
+          conditionMet = Number(normalizedCurrentValue) < Number(normalizedTriggerValue);
+          break;
+        case 'greater_than_or_equal':
+          conditionMet = Number(normalizedCurrentValue) >= Number(normalizedTriggerValue);
+          break;
+        case 'less_than_or_equal':
+          conditionMet = Number(normalizedCurrentValue) <= Number(normalizedTriggerValue);
+          break;
+      }
+    }
+
+    // Reverse if condition is NOT met
+    const shouldReverse = !conditionMet;
+    console.log('🔍 REVERSE CHECK RESULT:', {
+      automationName: automation.name,
+      fieldName: triggerFieldName,
+      currentValue: currentValue,
+      currentValueToCheck: currentValueToCheck,
+      normalizedCurrentValue: normalizedCurrentValue,
+      triggerValue: triggerValue,
+      normalizedTriggerValue: normalizedTriggerValue,
+      operator: trigger.condition.operator,
+      conditionMet,
+      shouldReverse
+    });
+    return shouldReverse;
+  }
+
+  // Reverse a move automation (move record back to source)
+  private static async reverseMoveAutomation(
+    automation: Automation,
+    recordId: string,
+    baseId: string,
+    currentTableId: string
+  ): Promise<void> {
+    console.log(`↩️ REVERSING MOVE: ${automation.name} for record ${recordId}`);
+    
+    // Get masterlist table
+    const { data: masterlistTable } = await supabase
+      .from("tables")
+      .select("id")
+      .eq("base_id", baseId)
+      .eq("is_master_list", true)
+      .single();
+
+    if (!masterlistTable) {
+      throw new Error('Masterlist table not found');
+    }
+
+    const masterlistTableId = masterlistTable.id;
+
+    // Determine source table from automation trigger
+    // If trigger has table_name, use that; otherwise use masterlist as default
+    const triggerTableName = automation.trigger.table_name;
+    let sourceTableId: string | undefined;
+
+    if (triggerTableName && triggerTableName.trim() !== '') {
+      const { data: sourceTable } = await supabase
+        .from("tables")
+        .select("id")
+        .eq("base_id", baseId)
+        .eq("name", triggerTableName)
+        .single();
+      
+      if (sourceTable) {
+        sourceTableId = sourceTable.id;
+      }
+    }
+
+    // Default to masterlist if no specific source table
+    if (!sourceTableId) {
+      sourceTableId = masterlistTableId;
+    }
+
+    // Get current record
+    const { data: currentRecord, error: fetchError } = await supabase
+      .from("records")
+      .select("table_id, values")
+      .eq("id", recordId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    // Only reverse if record is currently in the target table
+    const targetTableName = automation.action.target_table_name;
+    const { data: targetTable } = await supabase
+      .from("tables")
+      .select("id, name")
+      .eq("base_id", baseId)
+      .eq("name", targetTableName)
+      .single();
+
+    if (!targetTable || currentRecord.table_id !== targetTable.id) {
+      console.log('⚠️ Record is not in target table, skipping reverse');
+      return;
+    }
+
+    console.log(`↩️ Moving record from ${targetTable.name} back to source table`);
+
+    // Move record back to source table
+    const { error: moveError } = await supabase
+      .from("records")
+      .update({ table_id: sourceTableId })
+      .eq("id", recordId)
+      .eq("table_id", targetTable.id);
+
+    if (moveError) {
+      throw moveError;
+    }
+
+    console.log(`✅ Record moved back to source table`);
+
+    // Sync masterlist with current values
+    if (sourceTableId && sourceTableId !== masterlistTableId) {
+      await this.syncMasterlistWithTable(recordId, sourceTableId, masterlistTableId, currentRecord.values);
     }
   }
 }

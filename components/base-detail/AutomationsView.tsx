@@ -85,10 +85,10 @@ export const AutomationsView = ({
   };
 
   return (
-    <div className="flex-1 p-6 bg-gray-50">
-      <div className="max-w-6xl mx-auto">
+    <div className="flex-1 p-6 bg-gray-50 overflow-hidden">
+      <div className="max-w-6xl mx-auto h-full flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-shrink-0">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Automations</h2>
             <p className="text-gray-600 mt-1">
@@ -106,7 +106,7 @@ export const AutomationsView = ({
 
         {/* Automations List */}
         {automations.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-12 flex-1 flex flex-col items-center justify-center">
             <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
               <Play size={24} className="text-gray-400" />
             </div>
@@ -123,82 +123,84 @@ export const AutomationsView = ({
             </button>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {automations.map((automation) => (
-              <div
-                key={automation.id}
-                className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      {getActionIcon(automation.action.type)}
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {automation.name}
-                      </h3>
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          automation.enabled
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {automation.enabled ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                    
-                    <div className="text-sm text-gray-600 space-y-1">
-                      <p>
-                        <span className="font-medium">Trigger:</span> {getTriggerLabel(automation.trigger)}
-                      </p>
-                      <p>
-                        <span className="font-medium">Action:</span> {getActionLabel(automation.action.type)} → {getTargetTableName(automation.action.target_table_name)}
-                      </p>
-                      {automation.action.field_mappings.length > 0 && (
+          <div className="flex-1 overflow-y-auto pr-2">
+            <div className="grid gap-4 pb-4">
+              {automations.map((automation) => (
+                <div
+                  key={automation.id}
+                  className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        {getActionIcon(automation.action.type)}
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {automation.name}
+                        </h3>
+                        <span
+                          className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            automation.enabled
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {automation.enabled ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      
+                      <div className="text-sm text-gray-600 space-y-1">
                         <p>
-                          <span className="font-medium">Field Mappings:</span> {automation.action.field_mappings.length} field(s)
+                          <span className="font-medium">Trigger:</span> {getTriggerLabel(automation.trigger)}
                         </p>
-                      )}
+                        <p>
+                          <span className="font-medium">Action:</span> {getActionLabel(automation.action.type)} → {getTargetTableName(automation.action.target_table_name)}
+                        </p>
+                        {automation.action.field_mappings.length > 0 && (
+                          <p>
+                            <span className="font-medium">Field Mappings:</span> {automation.action.field_mappings.length} field(s)
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 ml-4">
-                    <button
-                      onClick={() => onToggleAutomation(automation.id)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        automation.enabled
-                          ? 'text-orange-600 hover:bg-orange-50'
-                          : 'text-green-600 hover:bg-green-50'
-                      }`}
-                      title={automation.enabled ? 'Disable' : 'Enable'}
-                    >
-                      {automation.enabled ? <Pause size={16} /> : <Play size={16} />}
-                    </button>
-                    <button
-                      onClick={() => setCopyingAutomation(automation)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Copy to another table"
-                    >
-                      <Copy size={16} />
-                    </button>
-                    <button
-                      onClick={() => setEditingAutomation(automation)}
-                      className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit size={16} />
-                    </button>
-                    <button
-                      onClick={() => onDeleteAutomation(automation.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => onToggleAutomation(automation.id)}
+                        className={`p-2 rounded-lg transition-colors ${
+                          automation.enabled
+                            ? 'text-orange-600 hover:bg-orange-50'
+                            : 'text-green-600 hover:bg-green-50'
+                        }`}
+                        title={automation.enabled ? 'Disable' : 'Enable'}
+                      >
+                        {automation.enabled ? <Pause size={16} /> : <Play size={16} />}
+                      </button>
+                      <button
+                        onClick={() => setCopyingAutomation(automation)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Copy to another table"
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <button
+                        onClick={() => setEditingAutomation(automation)}
+                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => onDeleteAutomation(automation.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

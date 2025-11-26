@@ -218,7 +218,7 @@ export const ImportCsvModal = ({
       const autoMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }> = {};
       headers.forEach(column => {
         // Clean the header name to use for matching
-        let fieldName = column.header.trim();
+        const fieldName = column.header.trim();
         // Remove special characters and replace with underscores
         let cleanFieldName = fieldName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
         // Ensure it starts with a letter
@@ -275,7 +275,7 @@ export const ImportCsvModal = ({
   const handleMappingChange = useCallback((csvColumn: string, fieldId: string | 'create') => {
     if (fieldId === 'create') {
       // Check if a field with this name already exists before creating a new one
-      let fieldName = csvColumn.trim();
+      const fieldName = csvColumn.trim();
       // Remove special characters and replace with underscores
       let cleanFieldName = fieldName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
       // Ensure it starts with a letter
