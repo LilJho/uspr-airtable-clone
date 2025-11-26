@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import type { TableRow } from "@/lib/types/base-detail";
 
+export type ViewControlPanel = 'hideFields' | 'filter' | 'group' | 'sort' | 'color' | 'share';
+
 interface TableControlsProps {
   tables: TableRow[];
   selectedTableId: string | null;
@@ -28,13 +30,24 @@ interface TableControlsProps {
   onRenameTable: (tableId: string) => void;
   onDeleteTable: (tableId: string) => void;
   onReorderTables: (reorderedTableIds: string[]) => void;
-  onHideFields: () => void;
-  onFilter: () => void;
-  onGroup: () => void;
-  onSort: () => void;
-  onColor: () => void;
-  onShare: () => void;
+  onHideFields: (trigger: HTMLElement) => void;
+  onFilter: (trigger: HTMLElement) => void;
+  onGroup: (trigger: HTMLElement) => void;
+  onSort: (trigger: HTMLElement) => void;
+  onColor: (trigger: HTMLElement) => void;
+  onShare: (trigger: HTMLElement) => void;
+  onDeleteAllFields?: () => void;
   canDeleteTable?: boolean;
+  viewState?: {
+    hiddenFieldsCount?: number;
+    filterDescription?: string | null;
+    groupDescription?: string | null;
+    sortDescription?: string | null;
+    colorDescription?: string | null;
+  };
+  activePanel?: ViewControlPanel | null;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
 }
 
 export const TableControls = ({
@@ -53,7 +66,12 @@ export const TableControls = ({
   onSort,
   onColor,
   onShare,
-  canDeleteTable = true
+  onDeleteAllFields,
+  canDeleteTable = true,
+  viewState,
+  activePanel = null,
+  searchQuery,
+  onSearchChange
 }: TableControlsProps) => {
   const [contextMenu, setContextMenu] = useState<{
     tableId: string;
@@ -61,11 +79,37 @@ export const TableControls = ({
     y: number;
   } | null>(null);
 
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+
   const [draggedTableId, setDraggedTableId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Sort tables by order_index to ensure consistent display order
   const sortedTables = [...tables].sort((a, b) => a.order_index - b.order_index);
+
+  // Close settings menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        settingsMenuRef.current &&
+        settingsButtonRef.current &&
+        !settingsMenuRef.current.contains(event.target as Node) &&
+        !settingsButtonRef.current.contains(event.target as Node)
+      ) {
+        setSettingsMenuOpen(false);
+      }
+    };
+
+    if (settingsMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [settingsMenuOpen]);
 
   const handleTableContextMenu = (e: React.MouseEvent, tableId: string) => {
     e.preventDefault();
@@ -138,6 +182,15 @@ export const TableControls = ({
     
     setDraggedTableId(null);
   };
+
+  const truncateLabel = (label?: string | null) => {
+    if (!label) return null;
+    return label.length > 28 ? `${label.slice(0, 25)}...` : label;
+  };
+  const filterLabel = truncateLabel(viewState?.filterDescription);
+  const groupLabel = truncateLabel(viewState?.groupDescription);
+  const sortLabel = truncateLabel(viewState?.sortDescription);
+  const colorLabel = truncateLabel(viewState?.colorDescription);
 
   return (
     <div className="bg-white border-b border-gray-200">
@@ -226,9 +279,42 @@ export const TableControls = ({
           >
             <Upload size={16} className="text-gray-400" />
           </button>
-          <button type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <Settings size={16} className="text-gray-400" />
-          </button>
+          <div className="relative">
+            <button
+              ref={settingsButtonRef}
+              type="button"
+              onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Settings"
+            >
+              <Settings size={16} className="text-gray-400" />
+            </button>
+            {settingsMenuOpen && onDeleteAllFields && (
+              <>
+                {/* Backdrop to close menu */}
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setSettingsMenuOpen(false)}
+                />
+                <div
+                  ref={settingsMenuRef}
+                  className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-50"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteAllFields();
+                      setSettingsMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <Trash2 size={14} />
+                    <span>Delete All Fields</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -237,48 +323,107 @@ export const TableControls = ({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={onHideFields}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={(e) => onHideFields(e.currentTarget as HTMLElement)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              activePanel === 'hideFields'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <Eye size={16} />
-            <span>Hide fields</span>
+            <div className="flex items-center gap-2">
+              <span>Hide fields</span>
+              {viewState?.hiddenFieldsCount ? (
+                <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                  {viewState.hiddenFieldsCount}
+                </span>
+              ) : null}
+            </div>
           </button>
           <button
             type="button"
-            onClick={onFilter}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={(e) => onFilter(e.currentTarget as HTMLElement)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              activePanel === 'filter'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <Filter size={16} />
-            <span>Filter</span>
+            <div className="flex flex-col leading-tight text-left">
+              <span>Filter</span>
+              {filterLabel && (
+                <span className="text-xs text-blue-600">
+                  {filterLabel}
+                </span>
+              )}
+            </div>
           </button>
           <button
             type="button"
-            onClick={onGroup}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={(e) => onGroup(e.currentTarget as HTMLElement)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              activePanel === 'group'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <Group size={16} />
-            <span>Group</span>
+            <div className="flex flex-col leading-tight text-left">
+              <span>Group</span>
+              {groupLabel && (
+                <span className="text-xs text-blue-600">
+                  {groupLabel}
+                </span>
+              )}
+            </div>
           </button>
           <button
             type="button"
-            onClick={onSort}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={(e) => onSort(e.currentTarget as HTMLElement)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              activePanel === 'sort'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <ArrowUpDown size={16} />
-            <span>Sorted by 1 field</span>
+            <div className="flex flex-col leading-tight text-left">
+              <span>{sortLabel ? 'Sorted' : 'Sorted by 1 field'}</span>
+              {sortLabel && (
+                <span className="text-xs text-blue-600">
+                  {sortLabel}
+                </span>
+              )}
+            </div>
           </button>
           <button
             type="button"
-            onClick={onColor}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={(e) => onColor(e.currentTarget as HTMLElement)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              activePanel === 'color'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <Palette size={16} />
-            <span>Color</span>
+            <div className="flex flex-col leading-tight text-left">
+              <span>Color</span>
+              {colorLabel && (
+                <span className="text-xs text-blue-600">
+                  {colorLabel}
+                </span>
+              )}
+            </div>
           </button>
           <button
             type="button"
-            onClick={onShare}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={(e) => onShare(e.currentTarget as HTMLElement)}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              activePanel === 'share'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <Share2 size={16} />
             <span>Share and sync</span>
@@ -291,6 +436,8 @@ export const TableControls = ({
           <input
             type="text"
             placeholder="Search records..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
           />
         </div>

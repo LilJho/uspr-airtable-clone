@@ -72,7 +72,49 @@ export const useBaseDetail = (baseId: string | null) => {
       if (selectedTable?.is_master_list && baseId) {
         // If it's a master list, load all fields from all tables in the base
         const fieldsData = await BaseDetailService.getAllFields(baseId);
-        setFields(fieldsData);
+        
+        // Load all records to check which fields have data
+        const allRecords = await BaseDetailService.getAllRecordsFromBase(baseId);
+        
+        // Build a set of field IDs that have data in records
+        const fieldsWithData = new Set<string>();
+        for (const record of allRecords) {
+          for (const fieldId of Object.keys(record.values)) {
+            const value = record.values[fieldId];
+            // Consider a field to have data if the value is not null, undefined, or empty string
+            if (value !== null && value !== undefined && value !== '') {
+              fieldsWithData.add(fieldId);
+            }
+          }
+        }
+        
+        // Deduplicate fields by name - prioritize fields that have data
+        // When multiple tables have fields with the same name, keep the one with data
+        const fieldMapByName = new Map<string, FieldRow>();
+        
+        for (const field of fieldsData) {
+          const normalizedName = field.name.toLowerCase();
+          const existingField = fieldMapByName.get(normalizedName);
+          
+          if (!existingField) {
+            // First occurrence - always keep it
+            fieldMapByName.set(normalizedName, field);
+          } else {
+            // Duplicate field name - keep the one with data
+            const existingHasData = fieldsWithData.has(existingField.id);
+            const currentHasData = fieldsWithData.has(field.id);
+            
+            if (currentHasData && !existingHasData) {
+              // Current field has data, existing doesn't - replace it
+              fieldMapByName.set(normalizedName, field);
+            }
+            // Otherwise, keep the existing field (either both have data or existing has data)
+          }
+        }
+        
+        const deduplicatedFields = Array.from(fieldMapByName.values());
+        
+        setFields(deduplicatedFields);
       } else {
         // Otherwise, load fields only from the selected table
         const fieldsData = await BaseDetailService.getFields(tableId);
@@ -252,6 +294,21 @@ export const useBaseDetail = (baseId: string | null) => {
     }
   }, []);
 
+  const deleteAllFields = useCallback(async (tableId: string) => {
+    try {
+      setError(null);
+      await BaseDetailService.deleteAllFields(tableId);
+      // After deletion, reload fields for the specific table only
+      // This ensures we get the correct fields even if it's a masterlist
+      const fieldsData = await BaseDetailService.getFields(tableId);
+      setFields(fieldsData);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete all fields';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
   // Record operations
   const createRecord = useCallback(async (values: Record<string, unknown> = {}) => {
     if (!selectedTableId) return;
@@ -426,6 +483,7 @@ export const useBaseDetail = (baseId: string | null) => {
     createField,
     updateField,
     deleteField,
+    deleteAllFields,
     createRecord,
     updateRecord,
     deleteRecord,

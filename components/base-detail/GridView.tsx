@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { TableHeader } from "./TableHeader";
 import { TableRow } from "./TableRow";
@@ -7,6 +7,7 @@ import type { RecordRow, FieldRow, SavingCell, TableRow as TableRowType } from "
 interface GridViewProps {
   records: RecordRow[];
   fields: FieldRow[];
+  allFields?: FieldRow[]; // All fields from all tables (for masterlist matching)
   tables: TableRowType[];
   selectedTableId: string | null;
   sortFieldId: string | null;
@@ -20,11 +21,16 @@ interface GridViewProps {
   onAddField: () => void;
   onFieldContextMenu: (e: React.MouseEvent, field: FieldRow) => void;
   onRowContextMenu: (e: React.MouseEvent, record: RecordRow) => void;
+  canDeleteRow?: boolean;
+  groupFieldIds?: string[];
+  colorFieldId?: string | null;
+  colorAssignments?: Record<string, string>;
 }
 
 export const GridView = ({
   records,
   fields,
+  allFields,
   tables,
   selectedTableId,
   sortFieldId,
@@ -37,7 +43,11 @@ export const GridView = ({
   onAddRow,
   onAddField,
   onFieldContextMenu,
-  onRowContextMenu
+  onRowContextMenu,
+  canDeleteRow = true,
+  groupFieldIds,
+  colorFieldId,
+  colorAssignments = {}
 }: GridViewProps) => {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
@@ -71,6 +81,126 @@ export const GridView = ({
 
   const allSelected = records.length > 0 && selectedRows.size === records.length;
   const someSelected = selectedRows.size > 0 && selectedRows.size < records.length;
+
+  type GroupSection = {
+    id: string;
+    label: string;
+    field: FieldRow;
+    depth: number;
+    count: number;
+    records: RecordRow[];
+    children: GroupSection[];
+  };
+
+  const groupedSections = useMemo(() => {
+    if (!groupFieldIds || groupFieldIds.length === 0) return null;
+    const validIds = groupFieldIds.filter(id => allFields.some(field => field.id === id));
+    if (validIds.length === 0) return null;
+
+    const buildSections = (data: RecordRow[], ids: string[], depth = 0): GroupSection[] => {
+      if (ids.length === 0) {
+        return [];
+      }
+      const [currentId, ...rest] = ids;
+      const groupField = allFields.find(field => field.id === currentId);
+      if (!groupField) {
+        return rest.length ? buildSections(data, rest, depth) : [];
+      }
+
+      const buckets = new Map<string, RecordRow[]>();
+      data.forEach(record => {
+        const rawValue = record.values?.[currentId];
+        const label = rawValue === null || rawValue === undefined || rawValue === '' ? 'No value' : String(rawValue);
+        if (!buckets.has(label)) {
+          buckets.set(label, []);
+        }
+        buckets.get(label)!.push(record);
+      });
+
+      return Array.from(buckets.entries())
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' }))
+        .map(([label, bucketRecords], index) => ({
+          id: `${currentId}-${label}-${depth}-${index}`,
+          label,
+          field: groupField,
+          depth,
+          count: bucketRecords.length,
+          records: rest.length ? [] : bucketRecords,
+          children: rest.length ? buildSections(bucketRecords, rest, depth + 1) : []
+        }));
+    };
+
+    return buildSections(records, validIds);
+  }, [records, groupFieldIds, allFields]);
+
+  let rowCounter = 0;
+
+  const renderGroupSections = (sections: GroupSection[]) =>
+    sections.map(section => (
+      <div key={section.id}>
+        <div
+          className="px-4 py-2 bg-gray-100 border-t border-b border-gray-200 flex items-center justify-between"
+          style={{ paddingLeft: `${section.depth * 24 + 12}px` }}
+        >
+          <div>
+            <div className="text-sm font-semibold text-gray-700">
+              {section.field.name}: {section.label}
+            </div>
+            <div className="text-xs text-gray-500">
+              {section.count} {section.count === 1 ? 'record' : 'records'}
+            </div>
+          </div>
+        </div>
+        {section.children.length > 0
+          ? renderGroupSections(section.children)
+          : section.records.map(record => {
+              const currentIndex = rowCounter;
+              rowCounter += 1;
+              return (
+                <TableRow
+                  key={record.id}
+                  record={record}
+                  fields={fields}
+                  tables={tables}
+                  selectedTableId={selectedTableId}
+                  rowIndex={currentIndex}
+                  savingCell={savingCell}
+                  isSelected={selectedRows.has(record.id)}
+                  onUpdateCell={onUpdateCell}
+                  onDeleteRow={onDeleteRow}
+                  onRowContextMenu={onRowContextMenu}
+                  onSelectRow={handleSelectRow}
+                  canDeleteRow={canDeleteRow}
+                  colorFieldId={colorFieldId}
+                  colorAssignments={colorAssignments}
+                />
+              );
+            })}
+      </div>
+    ));
+
+  const rowContent = groupedSections
+    ? renderGroupSections(groupedSections)
+    : records.map((record, index) => (
+        <TableRow
+          key={record.id}
+          record={record}
+          fields={fields}
+          tables={tables}
+          selectedTableId={selectedTableId}
+          rowIndex={index}
+          savingCell={savingCell}
+          isSelected={selectedRows.has(record.id)}
+          onUpdateCell={onUpdateCell}
+          onDeleteRow={onDeleteRow}
+          onRowContextMenu={onRowContextMenu}
+          onSelectRow={handleSelectRow}
+          canDeleteRow={canDeleteRow}
+          colorFieldId={colorFieldId}
+          colorAssignments={colorAssignments}
+        />
+      ));
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Bulk Actions Bar */}
@@ -134,6 +264,7 @@ export const GridView = ({
                   key={record.id}
                   record={record}
                   fields={fields}
+                  allFields={allFields} // Pass all fields for masterlist field matching
                   tables={tables}
                   selectedTableId={selectedTableId}
                   rowIndex={index}

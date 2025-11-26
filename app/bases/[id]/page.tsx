@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { Crown } from "lucide-react";
 import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
@@ -15,6 +15,7 @@ import { useBaseDetailState } from "@/lib/hooks/useBaseDetailState";
 import { TopNavigation } from "@/components/base-detail/TopNavigation";
 import { Sidebar } from "@/components/base-detail/Sidebar";
 import { TableControls } from "@/components/base-detail/TableControls";
+import type { ViewControlPanel } from "@/components/base-detail/TableControls";
 import { GridView } from "@/components/base-detail/GridView";
 import { KanbanView } from "@/components/base-detail/KanbanView";
 import { AutomationsView } from "@/components/base-detail/AutomationsView";
@@ -25,9 +26,38 @@ import { CreateTableModal } from "@/components/base-detail/CreateTableModal";
 import { RenameTableModal } from "@/components/base-detail/RenameTableModal";
 import { DeleteTableModal } from "@/components/base-detail/DeleteTableModal";
 import { RoleTagsManager } from "@/components/base-detail/RoleTagsManager";
+import { InterfacesView } from "@/components/base-detail/InterfacesView";
 import { DeleteBaseModal } from "@/components/base-detail/DeleteBaseModal";
 import { DeleteFieldModal } from "@/components/base-detail/DeleteFieldModal";
+import { DeleteAllFieldsModal } from "@/components/base-detail/DeleteAllFieldsModal";
 import { ExportBaseModal } from "@/components/base-detail/ExportBaseModal";
+import {
+  HideFieldsPanel,
+  FilterPanel,
+  GroupPanel,
+  SortPanel,
+  ColorPanel,
+  ShareViewPanel,
+  type FilterState,
+  type SortRule
+} from "@/components/base-detail/ViewControlModals";
+
+const generateClientId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+
+const createDefaultFilterState = (): FilterState => ({
+  match: 'all',
+  conditions: [
+    {
+      id: generateClientId(),
+      fieldId: null,
+      operator: 'contains',
+      value: ''
+    }
+  ]
+});
 
 // Types
 import type { FieldRow, RecordRow, FieldType } from "@/lib/types/base-detail";
@@ -50,6 +80,7 @@ export default function BaseDetailPage() {
     automations,
     allFields,
     loading,
+    loadingRecords,
     savingCell,
     error,
     setSelectedTableId,
@@ -61,6 +92,7 @@ export default function BaseDetailPage() {
     createField,
     updateField,
     deleteField,
+    deleteAllFields,
     updateCell,
     deleteRecord,
     bulkDeleteRecords,
@@ -77,8 +109,6 @@ export default function BaseDetailPage() {
   const {
     viewMode,
     topTab,
-    sortFieldId,
-    sortDirection,
     isRenameModalOpen,
     isCreateFieldModalOpen,
     isEditFieldModalOpen,
@@ -88,7 +118,6 @@ export default function BaseDetailPage() {
     isImportModalOpen,
     setViewMode,
     setTopTab,
-    toggleSort,
     openRenameModal,
     closeRenameModal,
     openCreateFieldModal,
@@ -119,6 +148,11 @@ export default function BaseDetailPage() {
   const [isDeleteFieldModalOpen, setIsDeleteFieldModalOpen] = useState(false);
   const openDeleteFieldModal = () => setIsDeleteFieldModalOpen(true);
   const closeDeleteFieldModal = () => setIsDeleteFieldModalOpen(false);
+
+  // Add state for delete all fields modal
+  const [isDeleteAllFieldsModalOpen, setIsDeleteAllFieldsModalOpen] = useState(false);
+  const openDeleteAllFieldsModal = () => setIsDeleteAllFieldsModalOpen(true);
+  const closeDeleteAllFieldsModal = () => setIsDeleteAllFieldsModalOpen(false);
   
   const { contextMenu, setContextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const { role, can } = useRole({ baseId });
@@ -127,6 +161,18 @@ export default function BaseDetailPage() {
   // State for editing field
   const [editingField, setEditingField] = useState<FieldRow | null>(null);
 
+  // View control states
+  const [hiddenFieldIds, setHiddenFieldIds] = useState<string[]>([]);
+  const [activeViewPanel, setActiveViewPanel] = useState<ViewControlPanel | null>(null);
+  const [groupFieldIds, setGroupFieldIds] = useState<string[]>([]);
+  const [colorFieldId, setColorFieldId] = useState<string | null>(null);
+  const [filterState, setFilterState] = useState<FilterState>(createDefaultFilterState());
+  const [sortRules, setSortRules] = useState<SortRule[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const viewControlsRef = useRef<HTMLDivElement | null>(null);
+  const viewPanelRef = useRef<HTMLDivElement | null>(null);
+  const [panelPosition, setPanelPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
   // Mark base as opened on mount/id change
   useEffect(() => {
     if (!baseId) return;
@@ -134,6 +180,31 @@ export default function BaseDetailPage() {
       console.error('Failed to mark base as opened', err);
     });
   }, [baseId]);
+
+  // Reset per-table view controls when switching tables
+  useEffect(() => {
+    setHiddenFieldIds([]);
+    setGroupFieldIds([]);
+    setColorFieldId(null);
+    setFilterState(createDefaultFilterState());
+    setSortRules([]);
+    setSearchQuery('');
+    setActiveViewPanel(null);
+  }, [selectedTableId]);
+
+  useEffect(() => {
+    if (!activeViewPanel) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (viewPanelRef.current?.contains(target)) return;
+      if (viewControlsRef.current?.contains(target)) return;
+      setActiveViewPanel(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [activeViewPanel]);
 
   // Event handlers
   const handleRenameBase = async (newName: string) => {
@@ -336,6 +407,85 @@ export default function BaseDetailPage() {
     }
   };
 
+  const handleToggleFieldVisibility = (fieldId: string) => {
+    setHiddenFieldIds(prev =>
+      prev.includes(fieldId) ? prev.filter(id => id !== fieldId) : [...prev, fieldId]
+    );
+  };
+
+  const handleHideAllFields = () => {
+    setHiddenFieldIds(fields.map(field => field.id));
+  };
+
+  const handleApplyFilterState = (config: FilterState) => {
+    setFilterState(config);
+  };
+
+  const handleClearFilterState = () => {
+    setFilterState(createDefaultFilterState());
+  };
+
+  const handleApplyGrouping = (fieldIds: string[]) => {
+    setGroupFieldIds(fieldIds.slice(0, 3));
+  };
+
+  const handleApplySortRules = (rules: SortRule[]) => {
+    setSortRules(rules.slice(0, 3));
+  };
+
+  const handleClearSortRules = () => {
+    setSortRules([]);
+  };
+
+  const handleApplyColorConfig = (fieldId: string | null) => {
+    setColorFieldId(fieldId);
+  };
+
+  const toggleViewPanel = (panel: ViewControlPanel, anchorEl: HTMLElement) => {
+    if (activeViewPanel === panel) {
+      setActiveViewPanel(null);
+      return;
+    }
+    const rect = anchorEl.getBoundingClientRect();
+    setPanelPosition({
+      x: rect.left,
+      y: rect.bottom + 6
+    });
+    setActiveViewPanel(panel);
+  };
+
+  const handleColumnSort = (fieldId: string) => {
+    setSortRules(prev => {
+      const existing = prev.find(rule => rule.fieldId === fieldId);
+      const nextDirection: SortRule['direction'] =
+        existing && prev[0]?.fieldId === fieldId
+          ? (existing.direction === 'asc' ? 'desc' : 'asc')
+          : 'asc';
+      const withoutField = prev.filter(rule => rule.fieldId !== fieldId);
+      return [
+        {
+          id: generateClientId(),
+          fieldId,
+          direction: nextDirection
+        },
+        ...withoutField
+      ].slice(0, 3);
+    });
+  };
+
+  const handleDeleteAllFields = async () => {
+    if (!selectedTableId) return;
+
+    try {
+      await deleteAllFields(selectedTableId);
+      // The deleteAllFields function already reloads fields, so we just need to reload records
+      await loadRecords(selectedTableId);
+      closeDeleteAllFieldsModal();
+    } catch (err) {
+      console.error('Error deleting all fields:', err);
+    }
+  };
+
   const handleImportCsv = async (data: { 
     file: File; 
     fieldMappings: Record<string, string | { type: 'create', fieldType: string, fieldName: string }> 
@@ -364,6 +514,130 @@ export default function BaseDetailPage() {
     
     return result;
   };
+
+  const visibleFields = useMemo(() => {
+    if (hiddenFieldIds.length === 0) return fields;
+    return fields.filter(field => !hiddenFieldIds.includes(field.id));
+  }, [fields, hiddenFieldIds]);
+
+  const filteredRecords = useMemo(() => {
+    const activeConditions = filterState.conditions.filter(condition => condition.fieldId && condition.value.trim());
+    if (activeConditions.length === 0) return records;
+    return records.filter(record => {
+      const evaluations = activeConditions.map(condition => {
+        const field = fields.find(f => f.id === condition.fieldId);
+        if (!field) return false;
+        const rawValue = record.values?.[field.id];
+        const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).toLowerCase();
+        const query = condition.value.toLowerCase();
+        switch (condition.operator) {
+          case 'equals':
+            return value === query;
+          case 'starts_with':
+            return value.startsWith(query);
+          case 'is_not':
+            return value !== query;
+          default:
+            return value.includes(query);
+        }
+      });
+      return filterState.match === 'all' ? evaluations.every(Boolean) : evaluations.some(Boolean);
+    });
+  }, [records, fields, filterState]);
+
+  const searchFilteredRecords = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return filteredRecords;
+    return filteredRecords.filter(record => {
+      const values = Object.values(record.values || {});
+      return values.some(value =>
+        value !== null &&
+        value !== undefined &&
+        String(value).toLowerCase().includes(query)
+      );
+    });
+  }, [filteredRecords, searchQuery]);
+
+  const sortedRecords = useMemo(() => {
+    if (sortRules.length === 0) return searchFilteredRecords;
+    const validRules = sortRules.filter(rule => rule.fieldId);
+    if (validRules.length === 0) return searchFilteredRecords;
+    return [...searchFilteredRecords].sort((a, b) => {
+      for (const rule of validRules) {
+        const fieldId = rule.fieldId!;
+        const field = fields.find(f => f.id === fieldId);
+        if (!field) continue;
+        const aValue = a.values?.[fieldId];
+        const bValue = b.values?.[fieldId];
+        if (aValue == null && bValue == null) continue;
+        if (aValue == null) return rule.direction === 'asc' ? 1 : -1;
+        if (bValue == null) return rule.direction === 'asc' ? -1 : 1;
+
+        let comparison = 0;
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          comparison = aValue - bValue;
+        } else if (field.type === 'date' || field.type === 'datetime') {
+          comparison = new Date(aValue as string).getTime() - new Date(bValue as string).getTime();
+        } else {
+          comparison = String(aValue).localeCompare(String(bValue), undefined, { numeric: true, sensitivity: 'base' });
+        }
+
+        if (comparison !== 0) {
+          return rule.direction === 'asc' ? comparison : -comparison;
+        }
+      }
+      return 0;
+    });
+  }, [searchFilteredRecords, sortRules, fields]);
+
+  const colorAssignments = useMemo(() => {
+    if (!colorFieldId) return {};
+    const palette = ['#2563eb', '#16a34a', '#db2777', '#f97316', '#0ea5e9', '#a855f7', '#059669', '#be185d', '#d97706', '#2563eb33'];
+    const assignments: Record<string, string> = {};
+    let paletteIndex = 0;
+    sortedRecords.forEach(record => {
+      const rawValue = record.values?.[colorFieldId];
+      const key = rawValue === null || rawValue === undefined || rawValue === '' ? '__empty' : String(rawValue);
+      if (!assignments[key]) {
+        assignments[key] = palette[paletteIndex % palette.length];
+        paletteIndex += 1;
+      }
+    });
+    return assignments;
+  }, [colorFieldId, sortedRecords]);
+
+  const processedRecords = sortedRecords;
+
+  const hiddenFieldsCount = hiddenFieldIds.length;
+  const activeFilterCount = filterState.conditions.filter(condition => condition.fieldId && condition.value.trim()).length;
+  const filterDescription = activeFilterCount > 0 ? `${activeFilterCount} condition${activeFilterCount > 1 ? 's' : ''}` : null;
+  const groupNames = groupFieldIds
+    .map(id => fields.find(f => f.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
+  const groupDescription = groupNames.length > 0
+    ? groupNames.length === 1
+      ? groupNames[0]
+      : `${groupNames[0]}${groupNames.length > 1 ? ` +${groupNames.length - 1}` : ''}`
+    : null;
+  const sortNames = sortRules
+    .map(rule => (rule.fieldId ? fields.find(f => f.id === rule.fieldId)?.name : null))
+    .filter((name): name is string => Boolean(name));
+  const sortDescription = sortNames.length > 0
+    ? sortNames.length === 1
+      ? sortNames[0]
+      : `${sortNames[0]} +${sortNames.length - 1}`
+    : null;
+  const colorField = colorFieldId ? fields.find(f => f.id === colorFieldId) : null;
+  const viewControlState = {
+    hiddenFieldsCount,
+    filterDescription,
+    groupDescription,
+    sortDescription,
+    colorDescription: colorField?.name ?? null,
+  };
+  const primarySortRule = sortRules.find(rule => rule.fieldId) ?? null;
+  const primarySortFieldId = primarySortRule?.fieldId ?? null;
+  const primarySortDirection = primarySortRule?.direction ?? 'asc';
 
   // Context menu options
   const getContextMenuOptions = () => {
@@ -510,24 +784,105 @@ export default function BaseDetailPage() {
 
         {/* Table Controls */}
         {topTab === 'data' && (
-          <TableControls
-            tables={tables}
-            selectedTableId={selectedTableId}
-            onTableSelect={setSelectedTableId}
-            onAddRecord={handleAddRow}
-            onImportCsv={openImportModal}
-            onCreateTable={openCreateTableModal}
-            onRenameTable={handleRenameTable}
-            onDeleteTable={handleDeleteTable}
-            onReorderTables={handleReorderTables}
-            onHideFields={() => {}} // TODO: Implement
-            onFilter={() => {}} // TODO: Implement
-            onGroup={() => {}} // TODO: Implement
-            onSort={() => {}} // TODO: Implement
-            onColor={() => {}} // TODO: Implement
-            onShare={() => {}} // TODO: Implement
+          <div className="relative" ref={viewControlsRef}>
+            <TableControls
+              tables={tables}
+              selectedTableId={selectedTableId}
+              onTableSelect={setSelectedTableId}
+              onAddRecord={handleAddRow}
+              onImportCsv={openImportModal}
+              onCreateTable={openCreateTableModal}
+              onRenameTable={handleRenameTable}
+              onDeleteTable={handleDeleteTable}
+              onReorderTables={handleReorderTables}
+              onHideFields={(el) => toggleViewPanel('hideFields', el)}
+              onFilter={(el) => toggleViewPanel('filter', el)}
+              onGroup={(el) => toggleViewPanel('group', el)}
+              onSort={(el) => toggleViewPanel('sort', el)}
+              onColor={(el) => toggleViewPanel('color', el)}
+              onShare={(el) => toggleViewPanel('share', el)}
+              onDeleteAllFields={openDeleteAllFieldsModal}
             canDeleteTable={can.delete}
-          />
+              viewState={viewControlState}
+              activePanel={activeViewPanel}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
+            {activeViewPanel && (
+              <div
+                ref={viewPanelRef}
+                className="fixed z-30"
+                style={{
+                  left: panelPosition.x,
+                  top: panelPosition.y
+                }}
+              >
+                <HideFieldsPanel
+                  isOpen={activeViewPanel === 'hideFields'}
+                  fields={fields}
+                  hiddenFieldIds={hiddenFieldIds}
+                  onToggleField={handleToggleFieldVisibility}
+                  onShowAll={() => setHiddenFieldIds([])}
+                  onHideAll={handleHideAllFields}
+                  onClose={() => setActiveViewPanel(null)}
+                />
+                <FilterPanel
+                  isOpen={activeViewPanel === 'filter'}
+                  fields={fields}
+                  filter={filterState}
+                  onApply={(config) => {
+                    handleApplyFilterState(config);
+                    setActiveViewPanel(null);
+                  }}
+                  onClear={() => {
+                    handleClearFilterState();
+                    setActiveViewPanel(null);
+                  }}
+                  onClose={() => setActiveViewPanel(null)}
+                />
+                <GroupPanel
+                  isOpen={activeViewPanel === 'group'}
+                  fields={fields}
+                  groupFieldIds={groupFieldIds}
+                  onApply={(ids) => {
+                    handleApplyGrouping(ids);
+                    setActiveViewPanel(null);
+                  }}
+                  onClose={() => setActiveViewPanel(null)}
+                />
+                <SortPanel
+                  isOpen={activeViewPanel === 'sort'}
+                  fields={fields}
+                  sortRules={sortRules}
+                  onApply={(rules) => {
+                    handleApplySortRules(rules);
+                    setActiveViewPanel(null);
+                  }}
+                  onClear={() => {
+                    handleClearSortRules();
+                    setActiveViewPanel(null);
+                  }}
+                  onClose={() => setActiveViewPanel(null)}
+                />
+                <ColorPanel
+                  isOpen={activeViewPanel === 'color'}
+                  fields={fields}
+                  colorFieldId={colorFieldId}
+                  onApply={(fieldId) => {
+                    handleApplyColorConfig(fieldId);
+                    setActiveViewPanel(null);
+                  }}
+                  onClose={() => setActiveViewPanel(null)}
+                />
+                <ShareViewPanel
+                  isOpen={activeViewPanel === 'share'}
+                  onClose={() => setActiveViewPanel(null)}
+                  baseId={baseId ?? null}
+                  baseName={base?.name || "Base"}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         {/* Data View */}
@@ -537,14 +892,15 @@ export default function BaseDetailPage() {
               
               {viewMode === 'grid' ? (
                 <GridView
-                  records={records}
-                  fields={fields}
+                  records={processedRecords}
+                  fields={visibleFields}
+                  allFields={fields}
                   tables={tables}
                   selectedTableId={selectedTableId}
-                  sortFieldId={sortFieldId}
-                  sortDirection={sortDirection}
+                  sortFieldId={primarySortFieldId}
+                  sortDirection={primarySortDirection}
                   savingCell={savingCell}
-                  onSort={toggleSort}
+                  onSort={handleColumnSort}
                   onUpdateCell={updateCell}
                   onDeleteRow={deleteRecord}
                   onBulkDelete={bulkDeleteRecords}
@@ -552,17 +908,20 @@ export default function BaseDetailPage() {
                   onAddField={handleAddField}
                   onFieldContextMenu={handleFieldContextMenu}
                   onRowContextMenu={handleRowContextMenu}
-                  {...(!can.delete ? { canDeleteRow: false } : {})}
+                  canDeleteRow={can.delete ?? true}
+                  groupFieldIds={groupFieldIds}
+                  colorFieldId={colorFieldId}
+                  colorAssignments={colorAssignments}
                 />
               ) : (
                 <KanbanView
-                  records={records}
+                  records={processedRecords}
                   fields={fields}
                   onUpdateCell={updateCell}
                   onDeleteRow={deleteRecord}
                   onAddRow={handleAddRow}
                   savingCell={savingCell}
-                  canDeleteRow={can.delete}
+                  canDeleteRow={can.delete ?? true}
                 />
               )}
             </div>
@@ -587,17 +946,25 @@ export default function BaseDetailPage() {
             />
           )}
 
-          {topTab === 'interfaces' && baseId && (role === 'owner' || role === 'admin') && (
-            <div className="p-6">
-              <RoleTagsManager scopeType="base" scopeId={baseId} />
-            </div>
-          )}
-
           {topTab === 'interfaces' && (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Interfaces</h3>
-                <p className="text-gray-500">Interface features coming soon...</p>
+            <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+              {baseId && (role === 'owner' || role === 'admin') && (
+                <div className="px-6 pt-6">
+                  <RoleTagsManager scopeType="base" scopeId={baseId} />
+                </div>
+              )}
+
+              <div className="flex-1 px-6 pb-6 min-h-0">
+                <InterfacesView
+                  base={base}
+                  tables={tables}
+                  fields={fields}
+                  records={records}
+                  selectedTableId={selectedTableId}
+                  onSelectTable={setSelectedTableId}
+                  loading={loading}
+                  loadingRecords={loadingRecords}
+                />
               </div>
             </div>
           )}
@@ -693,6 +1060,15 @@ export default function BaseDetailPage() {
         onClose={closeDeleteFieldModal}
         onDeleteField={handleDeleteFieldConfirm}
         field={contextMenu?.data && contextMenu.type === 'field' ? (contextMenu.data as FieldRow) : null}
+      />
+
+      {/* Delete All Fields Modal */}
+      <DeleteAllFieldsModal
+        isOpen={isDeleteAllFieldsModalOpen}
+        onClose={closeDeleteAllFieldsModal}
+        onDeleteAllFields={handleDeleteAllFields}
+        fieldCount={fields.length}
+        tableName={tables.find(t => t.id === selectedTableId)?.name || 'this table'}
       />
 
       {/* Export Base Modal */}
