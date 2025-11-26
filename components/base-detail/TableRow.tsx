@@ -17,6 +17,8 @@ interface TableRowProps {
   onRowContextMenu: (e: React.MouseEvent, record: RecordRow) => void;
   onSelectRow: (recordId: string, checked: boolean) => void;
   canDeleteRow?: boolean;
+  colorFieldId?: string | null;
+  colorAssignments?: Record<string, string>;
 }
 
 export const TableRow = ({
@@ -32,20 +34,23 @@ export const TableRow = ({
   onDeleteRow,
   onRowContextMenu,
   canDeleteRow = true,
-  onSelectRow
+  onSelectRow,
+  colorFieldId,
+  colorAssignments
 }: TableRowProps) => {
   const isSaving = savingCell?.recordId === record.id;
   
-  // Check if we're viewing a master list
-  const selectedTable = tables.find(t => t.id === selectedTableId);
-  const isMasterListView = selectedTable?.is_master_list;
-  
-  // Get the table name for this record
-  const recordTable = tables.find(t => t.id === record.table_id);
-  const tableName = recordTable?.name;
+  const colorValue = colorFieldId ? record.values?.[colorFieldId] : null;
+  const colorKey = colorFieldId
+    ? (colorValue === null || colorValue === undefined || colorValue === '' ? '__empty' : String(colorValue))
+    : null;
+  const rowColor = colorKey && colorAssignments ? colorAssignments[colorKey] : undefined;
 
   return (
-    <div className={`flex border-b border-gray-200 hover:bg-gray-50 group ${isSelected ? 'bg-blue-50' : ''}`}>
+    <div
+      className={`flex border-b border-gray-200 hover:bg-gray-50 group border-l-4 ${isSelected ? 'bg-blue-50' : ''}`}
+      style={{ borderLeftColor: rowColor || 'transparent' }}
+    >
       {/* Checkbox column */}
       <div className="w-10 flex-shrink-0 border-r border-gray-200 flex items-center justify-start pl-3">
         <input

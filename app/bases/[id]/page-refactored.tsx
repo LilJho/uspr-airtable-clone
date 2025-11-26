@@ -262,6 +262,7 @@ export default function BaseDetailPage() {
                 <GridView
                   records={records}
                   fields={fields}
+                  allFields={fields}
                   tables={tables}
                   selectedTableId={selectedTableId}
                   sortFieldId={sortFieldId}
