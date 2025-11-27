@@ -263,12 +263,6 @@ export const CreateAutomationModal = ({
       return;
     }
 
-    // Prevent creating fields in masterlist - masterlist should only show fields from other tables
-    if (targetTable.is_master_list) {
-      setErrors({ field_creation: 'Cannot create fields in masterlist. Masterlist automatically shows fields from all tables.' });
-      return;
-    }
-
     try {
       const newField = await BaseDetailService.createField({
         name: newFieldData.name,
@@ -304,12 +298,6 @@ export const CreateAutomationModal = ({
 
   const mapAllFields = async () => {
     if (!formData.action.target_table_name || !targetTable) {
-      return;
-    }
-
-    // Prevent creating fields in masterlist - masterlist should only show fields from other tables
-    if (targetTable.is_master_list) {
-      setErrors({ field_mapping: 'Cannot create fields in masterlist. Masterlist automatically shows fields from all tables.' });
       return;
     }
 
@@ -359,16 +347,10 @@ export const CreateAutomationModal = ({
         processedFieldNames.add(sourceField.name);
       }
 
-      // Create all new fields - ensure we never create fields in masterlist
+      // Create all new fields (masterlist is allowed, but we log for visibility)
       const createdFields: FieldRow[] = [];
       for (const fieldData of fieldsToCreate) {
         try {
-          // Double-check that we're not creating fields in masterlist
-          if (targetTable.is_master_list) {
-            console.warn('Skipping field creation in masterlist:', fieldData.name);
-            continue; // Skip this field - should not happen due to earlier check
-          }
-          
           // Build field creation data, including options for select fields
           const createFieldData: {
             name: string;
@@ -379,7 +361,7 @@ export const CreateAutomationModal = ({
           } = {
             name: fieldData.name,
             type: fieldData.type,
-            table_id: targetTable.id, // This should NEVER be masterlist id
+            table_id: targetTable.id,
             order_index: fieldData.order_index
           };
           

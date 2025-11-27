@@ -99,22 +99,51 @@ export class BaseImportService {
     
     // 4. Create automations
     for (const automationData of exported.automations || []) {
-      const tableId = tableNameToId.get(automationData.table_name);
-      if (!tableId) {
-        console.warn(`Table "${automationData.table_name}" not found for automation "${automationData.name}", skipping`);
-        continue;
+      // Handle "All tables" case - automation applies to all tables in the base
+      const isAllTables = automationData.table_name === 'All tables' || !automationData.table_name;
+      
+      // Get all fields from all tables for global field lookup
+      const allBaseFields = await BaseDetailService.getAllFields(newBaseId);
+      const globalFieldNameToId = new Map<string, string>();
+      // Use first occurrence of each field name (for globalized fields)
+      for (const field of allBaseFields) {
+        if (!globalFieldNameToId.has(field.name)) {
+          globalFieldNameToId.set(field.name, field.id);
+        }
       }
       
-      // Get fields for the source table to map field names to IDs
-      const sourceTableFields = await BaseDetailService.getFields(tableId);
-      const sourceFieldNameToId = new Map(sourceTableFields.map(f => [f.name, f.id]));
+      // Get fields for the source table (if specific table) or use global fields (if "All tables")
+      let sourceFieldNameToId: Map<string, string>;
+      if (isAllTables) {
+        // Use global field lookup for "All tables" automations
+        sourceFieldNameToId = globalFieldNameToId;
+      } else {
+        const tableId = tableNameToId.get(automationData.table_name);
+        if (!tableId) {
+          console.warn(`Table "${automationData.table_name}" not found for automation "${automationData.name}", skipping`);
+          continue;
+        }
+        const sourceTableFields = await BaseDetailService.getFields(tableId);
+        sourceFieldNameToId = new Map(sourceTableFields.map(f => [f.name, f.id]));
+      }
       
-      // Map trigger field_id using field_name
+      // Map trigger field_id using field_name (prefer field_name, fallback to field_id if needed)
       let newTriggerFieldId: string | undefined;
+      let newTriggerFieldName: string | undefined;
+      
       if (automationData.trigger.field_name) {
+        newTriggerFieldName = automationData.trigger.field_name;
         newTriggerFieldId = sourceFieldNameToId.get(automationData.trigger.field_name);
         if (!newTriggerFieldId) {
-          console.warn(`Trigger field "${automationData.trigger.field_name}" not found in table "${automationData.table_name}" for automation "${automationData.name}"`);
+          console.warn(`Trigger field "${automationData.trigger.field_name}" not found for automation "${automationData.name}"`);
+        }
+      } else if (automationData.trigger.field_id) {
+        // Fallback: try to resolve field_id if field_name is not available
+        // This is for backward compatibility with old exports
+        const field = allBaseFields.find(f => f.id === automationData.trigger.field_id);
+        if (field) {
+          newTriggerFieldName = field.name;
+          newTriggerFieldId = globalFieldNameToId.get(field.name);
         }
       }
       
@@ -136,13 +165,32 @@ export class BaseImportService {
       const targetFieldNameToId = new Map(targetTableFields.map(f => [f.name, f.id]));
       
       // Map action field_mappings using field names
+      // For source fields, use global lookup if "All tables", otherwise use source table fields
+      // For target fields, always use target table fields
       const newFieldMappings = (automationData.action.field_mappings || []).map(mapping => {
-        const sourceFieldId = mapping.source_field_name
-          ? sourceFieldNameToId.get(mapping.source_field_name)
-          : undefined;
-        const targetFieldId = mapping.target_field_name
-          ? targetFieldNameToId.get(mapping.target_field_name)
-          : undefined;
+        // Source field lookup - use global if "All tables", otherwise use source table
+        let sourceFieldId: string | undefined;
+        if (mapping.source_field_name) {
+          sourceFieldId = sourceFieldNameToId.get(mapping.source_field_name);
+        } else if (mapping.source_field_id && isAllTables) {
+          // Fallback: try to resolve by field_id if field_name not available (backward compatibility)
+          const field = allBaseFields.find(f => f.id === mapping.source_field_id);
+          if (field) {
+            sourceFieldId = globalFieldNameToId.get(field.name);
+          }
+        }
+        
+        // Target field lookup - always use target table
+        let targetFieldId: string | undefined;
+        if (mapping.target_field_name) {
+          targetFieldId = targetFieldNameToId.get(mapping.target_field_name);
+        } else if (mapping.target_field_id) {
+          // Fallback: try to resolve by field_id if field_name not available (backward compatibility)
+          const field = targetTableFields.find(f => f.id === mapping.target_field_id);
+          if (field) {
+            targetFieldId = field.id;
+          }
+        }
         
         if (sourceFieldId && targetFieldId) {
           return {
@@ -168,8 +216,10 @@ export class BaseImportService {
             enabled: automationData.enabled !== false,
             trigger: {
               type: automationData.trigger.type,
-              ...(automationData.table_name && { table_name: automationData.table_name }), // Optional table_name instead of table_id
-              ...(newTriggerFieldId && { field_id: newTriggerFieldId }),
+              // Only include table_name if it's not "All tables" (empty means all tables)
+              ...(automationData.table_name && automationData.table_name !== 'All tables' && { table_name: automationData.table_name }),
+              ...(newTriggerFieldId && { field_id: newTriggerFieldId }), // Keep for backward compatibility
+              ...(newTriggerFieldName && { field_name: newTriggerFieldName }), // Use field_name for globalized fields
               ...(automationData.trigger.condition && { condition: automationData.trigger.condition })
             },
             action: {

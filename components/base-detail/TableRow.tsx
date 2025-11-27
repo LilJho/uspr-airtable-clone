@@ -40,6 +40,10 @@ export const TableRow = ({
 }: TableRowProps) => {
   const isSaving = savingCell?.recordId === record.id;
   
+  // Determine if we're viewing the masterlist
+  const selectedTable = selectedTableId ? tables.find(t => t.id === selectedTableId) : null;
+  const isMasterListView = selectedTable?.is_master_list ?? false;
+  
   const colorValue = colorFieldId ? record.values?.[colorFieldId] : null;
   const colorKey = colorFieldId
     ? (colorValue === null || colorValue === undefined || colorValue === '' ? '__empty' : String(colorValue))

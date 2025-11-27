@@ -210,7 +210,7 @@ export class BaseDetailService {
     console.log('Creating field with data:', JSON.stringify(fieldData, null, 2));
     console.log('Field type:', fieldData.type, 'Type of type:', typeof fieldData.type);
     
-    // Check if target table is masterlist - prevent field creation in masterlist
+    // Check table metadata (masterlist tables are now allowed but we log for clarity)
     const { data: tableData, error: tableCheckError } = await supabase
       .from("tables")
       .select("is_master_list, name")
@@ -222,7 +222,7 @@ export class BaseDetailService {
     }
     
     if (tableData?.is_master_list) {
-      throw new Error('Cannot create fields in masterlist table. Masterlist automatically displays fields from all other tables.');
+      console.log('ℹ️ Creating field directly in masterlist table:', tableData.name);
     }
     
     // Validate and sanitize field type
@@ -727,7 +727,6 @@ export class BaseDetailService {
 
     // Get existing fields and their types
     const fields = await this.getFields(tableId);
-    const fieldTypeMap = new Map(fields.map(f => [f.id, f.type]));
     
     // If importing to masterlist, get all fields from the base to find existing fields by name
     let allBaseFields: FieldRow[] = [];
@@ -744,6 +743,12 @@ export class BaseDetailService {
       }
       console.log(`📋 Found ${allBaseFields.length} fields across the base (${fieldNameToIdMap.size} unique names)`);
     }
+    
+    // Build fieldTypeMap - use allBaseFields if importing to masterlist, otherwise use fields from the table
+    // This ensures fieldTypeMap includes all fields that might be referenced in mappings
+    const fieldsForTypeMap = isMasterlist ? allBaseFields : fields;
+    const fieldTypeMap = new Map(fieldsForTypeMap.map(f => [f.id, f.type]));
+    console.log(`📋 Built fieldTypeMap with ${fieldTypeMap.size} fields (isMasterlist: ${isMasterlist})`);
     
     // Create new fields for mappings that specify field creation
     const fieldsToCreate = new Map<string, { fieldType: string, fieldName: string, options?: Record<string, unknown> }>();
@@ -1124,75 +1129,83 @@ export class BaseDetailService {
             if (!fieldId) {
               console.error(`❌ MISSING FIELD ID: Failed to get field ID for newly created field "${mapping.fieldName}" for header "${header}"`);
               errors.push(`Row ${rowIndex + 2}: Failed to get field ID for newly created field "${mapping.fieldName}"`);
-              return;
+              return; // Skip this field but continue with others
             }
           } else {
             console.log(`❌ INVALID MAPPING: Invalid mapping type for header "${header}":`, mapping);
-            return;
+            return; // Skip this field but continue with others
           }
 
           const value = values[colIndex];
           const fieldType = fieldTypeMap.get(fieldId);
           
           if (!fieldType) {
-            errors.push(`Row ${rowIndex + 2}: Unknown field for column "${header}"`);
-            return;
+            console.warn(`Row ${rowIndex + 2}: Unknown field for column "${header}" - skipping this field`);
+            return; // Skip this field but continue with others
           }
 
           // Convert value based on field type
           let convertedValue: unknown = value;
+          let fieldProcessed = false;
           
           if (value === '' || value === null || value === undefined) {
             convertedValue = ''; // Use empty string instead of null
+            fieldProcessed = true; // Empty values are valid
           } else {
+            try {
             switch (fieldType) {
               case 'number':
                 const numValue = parseFloat(value);
                 if (isNaN(numValue)) {
-                  errors.push(`Row ${rowIndex + 2}: Invalid number "${value}" for field "${header}"`);
-                  return;
+                    console.warn(`Row ${rowIndex + 2}: Invalid number "${value}" for field "${header}" - skipping this field`);
+                    return; // Skip this field but continue with others
                 }
                 convertedValue = numValue;
+                  fieldProcessed = true;
                 break;
               case 'checkbox':
                 convertedValue = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+                  fieldProcessed = true;
                 break;
               case 'date':
                 const dateValue = parseDateValue(value);
                 if (!dateValue) {
-                  errors.push(`Row ${rowIndex + 2}: Invalid date "${value}" for field "${header}"`);
-                  return;
+                    console.warn(`Row ${rowIndex + 2}: Invalid date "${value}" for field "${header}" - skipping this field`);
+                    return; // Skip this field but continue with others
                 }
                 // Format as YYYY-MM-DD for date fields (date only, no time)
                 convertedValue = dateValue.toISOString().split('T')[0];
+                  fieldProcessed = true;
                 break;
               case 'datetime':
                 const datetimeValue = parseDateValue(value);
                 if (!datetimeValue) {
-                  errors.push(`Row ${rowIndex + 2}: Invalid datetime "${value}" for field "${header}"`);
-                  return;
+                    console.warn(`Row ${rowIndex + 2}: Invalid datetime "${value}" for field "${header}" - skipping this field`);
+                    return; // Skip this field but continue with others
                 }
                 // Store full ISO string for datetime fields (includes time)
                 convertedValue = datetimeValue.toISOString();
+                  fieldProcessed = true;
                 break;
               case 'email':
                 if (value && value.trim()) {
                   // Clean and extract valid email from potentially malformed input
                   const cleanedEmail = cleanEmailValue(value);
                   if (cleanedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
-                    errors.push(`Row ${rowIndex + 2}: Invalid email "${value}" for field "${header}"`);
-                    return;
+                      console.warn(`Row ${rowIndex + 2}: Invalid email "${value}" for field "${header}" - skipping this field`);
+                      return; // Skip this field but continue with others
                   }
                   convertedValue = cleanedEmail;
                 } else {
                   convertedValue = ''; // Empty string for empty email
                 }
+                  fieldProcessed = true;
                 break;
               case 'single_select':
                 // Map CSV value to option ID for single_select fields
                 if (value && value.trim()) {
-                  // Find the field to get its options
-                  const field = fields.find(f => f.id === fieldId);
+                    // Find the field to get its options - use fieldsForTypeMap to include all fields when importing to masterlist
+                    const field = fieldsForTypeMap.find(f => f.id === fieldId);
                   if (field && field.options) {
                     // Find the option that matches this value
                     const optionEntry = Object.entries(field.options).find(([_, optionData]) => {
@@ -1202,27 +1215,37 @@ export class BaseDetailService {
                     
                     if (optionEntry) {
                       convertedValue = optionEntry[0]; // Use the option ID
+                        fieldProcessed = true;
                     } else {
-                      // Value doesn't match any option - this shouldn't happen with our new logic
-                      errors.push(`Row ${rowIndex + 2}: Value "${value}" does not match any option for single_select field "${header}"`);
-                      return;
+                        // Value doesn't match any option - skip this field but continue with others
+                        console.warn(`Row ${rowIndex + 2}: Value "${value}" does not match any option for single_select field "${header}" - skipping this field`);
+                        return; // Skip this field but continue with others
                     }
                   } else {
                     convertedValue = value;
+                      fieldProcessed = true;
                   }
                 } else {
                   convertedValue = ''; // Empty string for empty single_select
+                    fieldProcessed = true;
                 }
                 break;
               default: // text, multi_select, link, phone
                 convertedValue = value;
+                  fieldProcessed = true;
                 break;
+              }
+            } catch (fieldError) {
+              console.warn(`Row ${rowIndex + 2}: Error processing field "${header}":`, fieldError);
+              return; // Skip this field but continue with others
             }
           }
 
+          // Only set the value if the field was successfully processed
+          if (fieldProcessed) {
           recordValues[fieldId] = convertedValue;
-          // Consider any non-null value as valid data (including empty strings)
-          if (convertedValue !== null && convertedValue !== undefined) {
+            // Consider the row valid if at least one field was successfully processed
+            // Even if the value is an empty string, the field exists and was processed
             hasValidData = true;
           }
           
@@ -1231,6 +1254,7 @@ export class BaseDetailService {
             convertedValue, 
             fieldId, 
             fieldType, 
+            fieldProcessed,
             hasValidData 
           });
         });
@@ -1534,7 +1558,7 @@ export class BaseDetailService {
       
       // Get current record values and table_id
       // Always fetch from database to get full record values, then merge newValues if provided
-      const { data: recordData, error: fetchError } = await supabase
+        const { data: recordData, error: fetchError } = await supabase
         .from("records")
         .select("values, table_id")
         .eq("id", recordId)
@@ -1554,9 +1578,9 @@ export class BaseDetailService {
         : recordData.values;
       
       const record = {
-        values: currentRecordValues,
-        table_id: recordData.table_id
-      };
+          values: currentRecordValues,
+          table_id: recordData.table_id
+        };
       
       console.log('✅ Record values (merged with newValues):', {
         databaseValues: recordData.values,
@@ -2308,7 +2332,7 @@ export class BaseDetailService {
           if (targetField) {
             mergedTargetValues[targetField.id] = newValue;
             console.log(`  ✓ PRIORITIZED ${newValueField.name} from newValues (${newValueFieldId} -> ${targetField.id}): ${newValue} [FROM NEWVALUES]`);
-          } else {
+            } else {
             console.log(`  ⚠️ Target field not found for ${newValueField.name} from newValues, value will be lost: ${newValue}`);
           }
         }
@@ -2346,7 +2370,7 @@ export class BaseDetailService {
           if (!(targetField.id in mergedTargetValues)) {
             mergedTargetValues[targetField.id] = sourceValue;
             console.log(`  ✓ Preserved ${sourceField.name} (${sourceFieldId} -> ${targetField.id}): ${sourceValue}`);
-          } else {
+        } else {
             console.log(`  ⏭️ Skipped ${sourceField.name} - already set from newValues`);
           }
         } else {
@@ -2382,10 +2406,10 @@ export class BaseDetailService {
             console.log(`  ✓ Keeping preserved value for ${targetField?.name || targetFieldId} (from newValues): ${existingValue}`);
             // Keep the existing value (from newValues) - don't override
             continue;
-          } else {
+            } else {
             console.log(`  ✓ Overriding with field mapping: ${targetField?.name || targetFieldId} (${targetFieldId}) = ${mappedValue} (was: ${existingValue})`);
-          }
-        } else {
+            }
+          } else {
           console.log(`  ✓ Setting field mapping: ${targetField?.name || targetFieldId} (${targetFieldId}) = ${mappedValue}`);
         }
         
@@ -2651,8 +2675,8 @@ export class BaseDetailService {
         
         if (!fieldIdMatches && !fieldNameMatches) {
           console.log(`   ❌ SKIPPED: "${automation.name}" - trigger field not changed`);
-          return false;
-        }
+        return false;
+      }
         
         console.log(`   ✅ PASSED: "${automation.name}" - trigger field matches changed field`);
       } else {

@@ -94,7 +94,9 @@ export const GridView = ({
 
   const groupedSections = useMemo(() => {
     if (!groupFieldIds || groupFieldIds.length === 0) return null;
-    const validIds = groupFieldIds.filter(id => allFields.some(field => field.id === id));
+    // Use allFields if available (for masterlist), otherwise fall back to fields
+    const fieldsToUse = allFields || fields;
+    const validIds = groupFieldIds.filter(id => fieldsToUse.some(field => field.id === id));
     if (validIds.length === 0) return null;
 
     const buildSections = (data: RecordRow[], ids: string[], depth = 0): GroupSection[] => {
@@ -102,7 +104,7 @@ export const GridView = ({
         return [];
       }
       const [currentId, ...rest] = ids;
-      const groupField = allFields.find(field => field.id === currentId);
+      const groupField = fieldsToUse.find(field => field.id === currentId);
       if (!groupField) {
         return rest.length ? buildSections(data, rest, depth) : [];
       }
@@ -131,7 +133,7 @@ export const GridView = ({
     };
 
     return buildSections(records, validIds);
-  }, [records, groupFieldIds, allFields]);
+  }, [records, groupFieldIds, allFields, fields]);
 
   let rowCounter = 0;
 

@@ -167,10 +167,14 @@ export class BaseExportService {
         };
       }),
       automations: allAutomations.map(({ automation, tableName }) => {
-        // Map trigger field_id to field_name
-        const triggerFieldInfo = automation.trigger?.field_id 
-          ? fieldIdToName.get(automation.trigger.field_id)
-          : undefined;
+        // Map trigger field - prefer field_name if available, otherwise resolve from field_id
+        let triggerFieldName: string | undefined;
+        if (automation.trigger?.field_name) {
+          triggerFieldName = automation.trigger.field_name;
+        } else if (automation.trigger?.field_id) {
+          const triggerFieldInfo = fieldIdToName.get(automation.trigger.field_id);
+          triggerFieldName = triggerFieldInfo?.name;
+        }
         
         // Map target table_name to table object (target_table_name is already a name, not an ID)
         const targetTable = automation.action?.target_table_name
@@ -179,18 +183,25 @@ export class BaseExportService {
         
         // Map field mappings - safely handle missing field_mappings
         const fieldMappings = (automation.action?.field_mappings || []).map(mapping => {
-          const sourceFieldInfo = mapping.source_field_id
-            ? fieldIdToName.get(mapping.source_field_id)
-            : undefined;
-          const targetFieldInfo = mapping.target_field_id
-            ? fieldIdToName.get(mapping.target_field_id)
-            : undefined;
+          // For source field - prefer field name resolution from field_id
+          let sourceFieldName: string | undefined;
+          if (mapping.source_field_id) {
+            const sourceFieldInfo = fieldIdToName.get(mapping.source_field_id);
+            sourceFieldName = sourceFieldInfo?.name;
+          }
+          
+          // For target field - prefer field name resolution from field_id
+          let targetFieldName: string | undefined;
+          if (mapping.target_field_id) {
+            const targetFieldInfo = fieldIdToName.get(mapping.target_field_id);
+            targetFieldName = targetFieldInfo?.name;
+          }
           
           return {
             source_field_id: mapping.source_field_id,
-            source_field_name: sourceFieldInfo?.name,
+            source_field_name: sourceFieldName,
             target_field_id: mapping.target_field_id,
-            target_field_name: targetFieldInfo?.name
+            target_field_name: targetFieldName
           };
         });
         
@@ -206,7 +217,7 @@ export class BaseExportService {
           trigger: {
             type: automation.trigger?.type || 'record_created',
             ...(automation.trigger?.field_id && { field_id: automation.trigger.field_id }),
-            field_name: triggerFieldInfo?.name,
+            ...(triggerFieldName && { field_name: triggerFieldName }),
             ...(automation.trigger?.condition && { condition: automation.trigger.condition }),
             ...(automation.trigger?.table_name && { table_name: automation.trigger.table_name })
           },

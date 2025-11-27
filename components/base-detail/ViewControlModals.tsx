@@ -891,5 +891,3 @@ export const ShareViewPanel = ({
     </PanelCard>
   );
 };
-
-export type { FilterCondition };
